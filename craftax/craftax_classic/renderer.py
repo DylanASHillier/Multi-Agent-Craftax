@@ -859,8 +859,14 @@ def render_others_data(state, player=0):
 
     directions = jnp.delete(state.player_direction, player)
     directions_one_hot = jax.nn.one_hot(directions, num_classes=4)
+
     # Set to all zeros if player isn't visible
-    directions_one_hot = jnp.where(show_player, directions_one_hot, jnp.zeros_like(directions_one_hot))
+    show_player_others = jnp.delete(show_player, player)
+    directions_one_hot = jnp.where(
+        show_player_others[:, None],
+        directions_one_hot,
+        jnp.zeros_like(directions_one_hot),
+    )
 
     return jnp.concat([player_map_flattened, filtered_inventories_flattened, directions_one_hot], axis=1)
 
