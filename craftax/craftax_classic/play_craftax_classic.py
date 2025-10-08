@@ -8,7 +8,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from craftax.craftax.craftax_state import StaticEnvParams
+from craftax.craftax_classic.envs.craftax_state import StaticEnvParams
 from craftax.craftax_classic.constants import (
     OBS_DIM,
     INVENTORY_OBS_HEIGHT,
@@ -20,7 +20,6 @@ from craftax.craftax_classic.envs.craftax_state import EnvParams
 from craftax.craftax_classic.envs.craftax_symbolic_env import CraftaxClassicSymbolicEnv
 from craftax.craftax_classic.game_logic import are_players_alive
 from craftax.craftax_classic.renderer import render_craftax_pixels
-from craftax.craftax_env import make_craftax_env_from_name
 
 KEY_MAPPING = {
     pygame.K_q: Action.NOOP,
