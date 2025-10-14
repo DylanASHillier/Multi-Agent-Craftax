@@ -522,7 +522,7 @@ def do_action(rng, state, action, static_params):
             state.map[block_position[:, 0], block_position[:, 1]],
         )
     )
-    new_inventory = jax.tree_map(
+    new_inventory = jax.tree_util.tree_map(
         lambda x, y: jax.lax.select(action_block_in_bounds, x, y),
         new_inventory,
         state.inventory,
@@ -2003,7 +2003,7 @@ def cap_inventory(state):
     """
     Limit inventory to 9 items
     """
-    capped_inv = jax.tree_map(lambda x: jnp.minimum(x, 9), state.inventory)
+    capped_inv = jax.tree_util.tree_map(lambda x: jnp.minimum(x, 9), state.inventory)
 
     state = state.replace(inventory=capped_inv)
 
