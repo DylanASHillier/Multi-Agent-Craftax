@@ -215,7 +215,7 @@ class CraftaxClassicSymbolicEnv(environment.Environment):
         obs_re, state_re = self.reset_env(key_reset, params)
         # Auto-reset environment based on termination
         all_done = jnp.all(done)
-        state = jax.tree_map(
+        state = jax.tree_util.tree_map(
             lambda x, y: jax.lax.select(all_done, x, y), state_re, state_st
         )
         obs = jax.lax.select(all_done, obs_re, obs_st)
