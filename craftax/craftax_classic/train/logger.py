@@ -69,5 +69,25 @@ class TrainLogger:
         else:
             self.stats[key] = [(iteration, data)]
 
+
+    def insert_stat(self, iteration: int, key: str, data: Any) -> None:
+        """
+        Inserts statistic, using wandb if possible.
+        Note that the data should be an array containing data for all agents.
+        """
+        if self.wandb_project:
+            # TODO: double check if wandb will plot the data properly
+            wandb.log(
+                {
+                    "train/episode": iteration,
+                    f"train/{key}/learning_agent": data,
+                },
+                step=iteration,
+            )
+        elif key in self.stats:
+            self.stats[key].append((iteration, data))
+        else:
+            self.stats[key] = [(iteration, data)]
+
     def __repr__(self) -> str:
         return f"Train Log with {len(self.model_snapshots)} snapshots and {len(next(iter(self.stats.values())))} items of {len(self.stats)} different statistics"

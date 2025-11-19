@@ -109,6 +109,7 @@ class ClassicMetaController:
         vf_coef: float = 0.5,
         aux_coef: float = 0.3,
         max_grad_norm: float = 0.5,
+        wandb_project: str = ""
         # target_kl: float | None = None,
     ):
         """
@@ -141,6 +142,7 @@ class ClassicMetaController:
         self.fixed_timesteps = fixed_timesteps
         self.env_params = env_params
         self.timestep = self.env_params.max_timesteps
+        self.wandb_project = wandb_project
         if fixed_timesteps:
             self.env = CraftaxClassicSymbolicEnvShareStatsNoAutoReset(
                 self.static_params
@@ -623,6 +625,7 @@ class ClassicMetaController:
                 last_approx_kl,
             )
 
+        """
         (
             model_params,
             opt_states,
@@ -639,23 +642,72 @@ class ClassicMetaController:
             jax.random.split(rng, self.static_params.num_players),
         )
 
+        instead of having process_agent do all of the vmapping, you want to run process_agent on each of the agents
+        
+        first n-1 agents will use the frozen policy parameters 
+        the n-1 agent will have a fresh updating of the policy
+        """
+
+        print("Number of players: ", self.static_params.num_players)
+
+
+        (
+            _,
+            _,
+            agent_loss,
+            agent_pg_loss,
+            agent_v_loss,
+            agent_entropy_loss,
+            agent_aux_loss,
+            last_approx_kl,
+        ) = jax.vmap(process_agent)(
+            jnp.arange(self.static_params.num_players),
+            model_params,
+            opt_states,
+            jax.random.split(rng, self.static_params.num_players),
+        )
+
+
+        last_model_params, last_opt_states = jax.tree.map(lambda x: x[self.static_params.num_players-1], (model_params, opt_states))
+        (
+            last_model_params,
+            last_opt_states,
+            last_agent_loss,
+            last_agent_pg_loss,
+            last_agent_v_loss,
+            last_agent_entropy_loss,
+            last_agent_aux_loss,
+            last_last_approx_kl,
+        ) = process_agent(self.static_params.num_players - 1, last_model_params, last_opt_states, rng)
+
+        model_params, opt_states = jax.tree.map(lambda a, b: a.at[self.static_params.num_players-1].set(b), (model_params, opt_states), (last_model_params, last_opt_states))
+
+        # how would i set the loss to include the 
+        # loss of the last agent as well? 
+
+        """
+        should i set certain variables or no?
+        - 
+        """
         return (
             model_params,
             opt_states,
             next_lstm_states,
             next_obs,
             env_state,
-            agent_loss,
-            agent_pg_loss,
-            agent_v_loss,
-            agent_entropy_loss,
-            agent_aux_loss,
-            rewards.mean(axis=(0, 2)),
-            last_approx_kl,
+            last_agent_loss,
+            last_agent_pg_loss,
+            last_agent_v_loss,
+            last_agent_entropy_loss,
+            last_agent_aux_loss,
+            rewards.mean(axis=(1)),
+            last_last_approx_kl,
         )
 
     def train(self, model_params=None):
         if model_params is None:
+            # print("width: ", self.observation_space.spaces[0].shape)
+            # print("length: ", self.observation_space.spaces[1].shape)
             dummy_obs = (
                 jnp.ones(
                     (self.num_steps, self.num_envs)
@@ -691,12 +743,17 @@ class ClassicMetaController:
                 ),
             )
             model_params = (agent_params, aux_params)
+
+            """
+            model_params = jax.tree.map(lambda a, b: a.at[:n-1].set(b), model_params, your first n-1 player params)
+            """
         else:
+            model_params = jax.tree.map(lambda a, b: a.at[:self.static_params.num_players].set(b), model_params, model_params)
             rng = self.rng
         opt_states = jax.vmap(self.optimizer.init)(model_params)
 
         # Logger
-        log = TrainLogger(self.config, self.env_params, self.static_params)
+        log = TrainLogger(self.config, self.env_params, self.static_params, wandb_project=self.wandb_project)
 
         # initialize environment
         rng, _rng = jax.random.split(rng)
@@ -708,7 +765,8 @@ class ClassicMetaController:
             jnp.zeros((self.static_params.num_players, self.num_envs, 256)),
         )
         for iteration in range(self.num_iterations):
-            print("Iteration", iteration)
+            iteration_string = str(iteration) + "****************************************"
+            print("Iteration", iteration_string)
             rng, _rng = jax.random.split(rng)
             (
                 model_params,
@@ -740,15 +798,9 @@ class ClassicMetaController:
             log.insert_stat(iteration, "entropy_loss", agent_entropy_loss)
             log.insert_stat(iteration, "aux_loss", agent_aux_loss)
             if iteration % 20 == 0:
+                print("I went into here!***************************************************************")
                 log.insert_model_snapshot(iteration, model_params)
-            for agent in range(self.static_params.num_players):
-                print("Agent", agent, "loss:", agent_loss[agent])
-                print("Agent", agent, "PG loss:", agent_pg_loss[agent])
-                print("Agent", agent, "value loss:", agent_v_loss[agent])
-                print("Agent", agent, "entropy:", agent_entropy_loss[agent])
-                print("Agent", agent, "auxillary loss:", agent_aux_loss[agent])
-                print("Agent", agent, "reward:", rewards[agent])
-                print("Agent", agent, "approx KL:", last_approx_kl[agent], flush=True)
+            
         return model_params, opt_states, log
 
     def run_one_episode(self, model_params):

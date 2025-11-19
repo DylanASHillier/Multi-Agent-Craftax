@@ -34,6 +34,8 @@ def render_craftax_symbolic(state, player=0, observe_others=False):
     else:
         mob_map = jnp.zeros((*OBS_DIM, 5), dtype=jnp.uint8)  # 4 types of mobs + players
 
+    # print("mob_map: ", mob_map.shape)
+
     def _add_mob_to_map(carry, mob_index):
         mob_map, mobs, mob_type_index = carry
 
@@ -53,24 +55,26 @@ def render_craftax_symbolic(state, player=0, observe_others=False):
 
         return (mob_map, mobs, mob_type_index), None
 
-    (mob_map, _, _), _ = jax.lax.scan(
-        _add_mob_to_map,
-        (mob_map, state.zombies, 0),
-        jnp.arange(state.zombies.mask.shape[0]),
-    )
+    # (mob_map, _, _), _ = jax.lax.scan(
+    #     _add_mob_to_map,
+    #     (mob_map, state.zombies, 0),
+    #     jnp.arange(state.zombies.mask.shape[0]),
+    # )
     (mob_map, _, _), _ = jax.lax.scan(
         _add_mob_to_map, (mob_map, state.cows, 1), jnp.arange(state.cows.mask.shape[0])
     )
-    (mob_map, _, _), _ = jax.lax.scan(
-        _add_mob_to_map,
-        (mob_map, state.skeletons, 2),
-        jnp.arange(state.skeletons.mask.shape[0]),
-    )
-    (mob_map, _, _), _ = jax.lax.scan(
-        _add_mob_to_map,
-        (mob_map, state.arrows, 3),
-        jnp.arange(state.arrows.mask.shape[0]),
-    )
+    # (mob_map, _, _), _ = jax.lax.scan(
+    #     _add_mob_to_map,
+    #     (mob_map, state.skeletons, 2),
+    #     jnp.arange(state.skeletons.mask.shape[0]),
+    # )
+    # (mob_map, _, _), _ = jax.lax.scan(
+    #     _add_mob_to_map,
+    #     (mob_map, state.arrows, 3),
+    #     jnp.arange(state.arrows.mask.shape[0]),
+    # )
+
+
 
     if not observe_others:
         # Add other player positions to mob map
@@ -137,8 +141,12 @@ def render_craftax_symbolic(state, player=0, observe_others=False):
     )
 
     if observe_others:
+        # print("All flatened: ", all_flattened)
+        # print("mob map size: ", mob_map.shape)
         # return auxillary data as well if we want to observe others
         return all_flattened, render_others_data(state)
+
+    
 
     return all_flattened
 
@@ -301,9 +309,9 @@ def render_craftax_pixels(state, block_pixel_size, num_players, player=0):
 
         return pixels, None
 
-    map_pixels, _ = jax.lax.scan(
-        _add_zombie_to_pixels, map_pixels, jnp.arange(state.zombies.mask.shape[0])
-    )
+    # map_pixels, _ = jax.lax.scan(
+    #     _add_zombie_to_pixels, map_pixels, jnp.arange(state.zombies.mask.shape[0])
+    # )
 
     def _add_cow_to_pixels(pixels, cow_index):
         local_position = (
@@ -400,9 +408,9 @@ def render_craftax_pixels(state, block_pixel_size, num_players, player=0):
 
         return pixels, None
 
-    map_pixels, _ = jax.lax.scan(
-        _add_skeleton_to_pixels, map_pixels, jnp.arange(state.skeletons.mask.shape[0])
-    )
+    # map_pixels, _ = jax.lax.scan(
+    #     _add_skeleton_to_pixels, map_pixels, jnp.arange(state.skeletons.mask.shape[0])
+    # )
 
     def _add_arrow_to_pixels(pixels, arrow_index):
         local_position = (
@@ -482,9 +490,9 @@ def render_craftax_pixels(state, block_pixel_size, num_players, player=0):
 
         return pixels, None
 
-    map_pixels, _ = jax.lax.scan(
-        _add_arrow_to_pixels, map_pixels, jnp.arange(state.arrows.mask.shape[0])
-    )
+    # map_pixels, _ = jax.lax.scan(
+    #     _add_arrow_to_pixels, map_pixels, jnp.arange(state.arrows.mask.shape[0])
+    # )
 
     # Apply night
     daylight = state.light_level

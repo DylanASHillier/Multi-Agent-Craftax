@@ -39,7 +39,7 @@ def generate_world(rng, params: EnvParams, static_params: StaticEnvParams):
 
     # Water
     rng, _rng = jax.random.split(rng)
-    map = jnp.where(water > 0.7, BlockType.WATER.value, BlockType.GRASS.value)
+    map = jnp.where(water > 0.4, BlockType.WATER.value, BlockType.GRASS.value)
 
     # water = water - 0.15 * mountain + 0.15
 
@@ -124,6 +124,14 @@ def generate_world(rng, params: EnvParams, static_params: StaticEnvParams):
 
     # Trees
     rng, _rng = jax.random.split(rng)
+
+    """
+    To impact the number of trees or lava
+    - lower the tree_threshold 
+    - lower the random threshold as well
+
+    original is: 0.5, 0.8
+    """
     tree_noise = generate_fractal_noise_2d(
         _rng,
         static_params.map_size,
@@ -131,9 +139,9 @@ def generate_world(rng, params: EnvParams, static_params: StaticEnvParams):
         octaves=1,
         override_angles=fractal_noise_angles[3],
     )
-    tree = (tree_noise > 0.5) * jax.random.uniform(
+    tree = (tree_noise > 0.3) * jax.random.uniform(
         rng, shape=static_params.map_size
-    ) > 0.8
+    ) > 0.6
     tree = jnp.logical_and(tree, map == BlockType.GRASS.value)
     map = jnp.where(tree, BlockType.TREE.value, map)
 
@@ -257,6 +265,9 @@ def generate_world(rng, params: EnvParams, static_params: StaticEnvParams):
     )
 
     return state
+
+
+###########################################################################################################################################################
 
 
 # def generate_random_world(rng, params: EnvParams, static_params: StaticEnvParams):

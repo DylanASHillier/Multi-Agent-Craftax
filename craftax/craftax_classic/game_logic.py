@@ -15,9 +15,24 @@ def is_game_over(state, params):
     )
     is_dead = state.player_health <= 0
 
-    return ~params.god_mode & (done_steps | in_lava | is_dead)
+    # do not set god more, 
+    # set the done_steps and is_dead to false always though
+
+    """
+    just comment out the is_dead part of the code, 
+    replace it with a boolean, where it does not have is_dead
+    - do not care about is_dead, do not care about health going 
+      down, only lava is the main concern for health
+    """
+    # return ~params.god_mode & (done_steps | in_lava | is_dead)
+    return done_steps | in_lava
 
 
+
+"""####################################################################################################################################################
+Helper methods
+- not nessecary to look into for use case
+"""
 def are_players_alive(state):
     """
     Whether each player is still in the game
@@ -112,6 +127,15 @@ def get_player_attack_damage(state: EnvState):
     """
     Calculates the player attack damage, which depends on player inventory
     """
+
+    """
+    Damage:
+    - this is different for different types of weapons
+        - 1 for hands 
+        - 2 for wood sword
+        - 3 for stone sword
+        - 5 for iron sword
+    """
     damages = jnp.stack(
         [
             jnp.ones_like(state.inventory.wood_sword),
@@ -148,7 +172,15 @@ def update_plants_with_eat(state: EnvState, plant_position, static_params, in_bo
     # plant_index = jnp.argmax(is_plant)
     # return state.growing_plants_age.at[plant_index].set(0)
 
+# Helper methods
+##############################################################################################################################################################
 
+
+"""
+This is done with a space bar action
+- this is automatic can figure out which action to do based on
+  the conditions that are provided below
+"""
 def do_action(rng, state, action, static_params):
     """
     Calculates the state after performing player action (spacebar)
@@ -159,40 +191,40 @@ def do_action(rng, state, action, static_params):
     block_position = state.player_position + DIRECTIONS[state.player_direction]
 
     # Zombie
-    def is_attacking_zombie_at_index(unused, zombie_index):
-        in_zombie = (state.zombies.position[zombie_index] == block_position).all(axis=1)
-        in_zombie = jnp.logical_and(in_zombie, is_do)
-        return None, jnp.logical_and(in_zombie, state.zombies.mask[zombie_index])
+    # def is_attacking_zombie_at_index(unused, zombie_index):
+    #     in_zombie = (state.zombies.position[zombie_index] == block_position).all(axis=1)
+    #     in_zombie = jnp.logical_and(in_zombie, is_do)
+    #     return None, jnp.logical_and(in_zombie, state.zombies.mask[zombie_index])
 
-    _, is_attacking_zombie_array = jax.lax.scan(
-        is_attacking_zombie_at_index, None, jnp.arange(static_params.max_zombies)
-    )
-    is_attacking_zombie = is_attacking_zombie_array.sum(axis=0) > 0
-    target_zombie_index = jnp.argmax(is_attacking_zombie_array, axis=0)
-    new_zombies = state.zombies
+    # _, is_attacking_zombie_array = jax.lax.scan(
+    #     is_attacking_zombie_at_index, None, jnp.arange(static_params.max_zombies)
+    # )
+    # is_attacking_zombie = is_attacking_zombie_array.sum(axis=0) > 0
+    # target_zombie_index = jnp.argmax(is_attacking_zombie_array, axis=0)
+    # new_zombies = state.zombies
 
-    new_zombie_health = new_zombies.health.at[target_zombie_index].add(
-        -get_player_attack_damage(state) * is_attacking_zombie
-    )
-    # Replace sets the field to a new value
-    new_zombies = new_zombies.replace(health=new_zombie_health)
+    # new_zombie_health = new_zombies.health.at[target_zombie_index].add(
+    #     -get_player_attack_damage(state) * is_attacking_zombie
+    # )
+    # # Replace sets the field to a new value
+    # new_zombies = new_zombies.replace(health=new_zombie_health)
 
-    old_mask = new_zombies.mask[target_zombie_index]
-    # zombies with 0 health die
-    new_zombies = new_zombies.replace(mask=new_zombies.health > 0)
-    did_kill_zombie = jnp.logical_and(
-        old_mask, jnp.logical_not(new_zombies.mask[target_zombie_index])
-    )
-    new_achievements = state.achievements.at[:, Achievement.DEFEAT_ZOMBIE.value].set(
-        jnp.logical_or(
-            state.achievements[:, Achievement.DEFEAT_ZOMBIE.value], did_kill_zombie
-        )
-    )
+    # old_mask = new_zombies.mask[target_zombie_index]
+    # # zombies with 0 health die
+    # new_zombies = new_zombies.replace(mask=new_zombies.health > 0)
+    # did_kill_zombie = jnp.logical_and(
+    #     old_mask, jnp.logical_not(new_zombies.mask[target_zombie_index])
+    # )
+    # new_achievements = state.achievements.at[:, Achievement.DEFEAT_ZOMBIE.value].set(
+    #     jnp.logical_or(
+    #         state.achievements[:, Achievement.DEFEAT_ZOMBIE.value], did_kill_zombie
+    #     )
+    # )
 
-    state = state.replace(
-        zombies=new_zombies,
-        achievements=new_achievements,
-    )
+    # state = state.replace(
+    #     zombies=new_zombies,
+    #     achievements=new_achievements,
+    # )
 
     # Cow
     def is_attacking_cow_at_index(unused, cow_index):
@@ -233,47 +265,51 @@ def do_action(rng, state, action, static_params):
     state = state.replace(cows=new_cows, player_food=new_food, player_hunger=new_hunger)
     state = state.replace(achievements=new_achievements)
 
-    # Skeleton
-    def is_attacking_skeleton_at_index(unused, skeleton_index):
-        in_skeleton = (state.skeletons.position[skeleton_index] == block_position).all(
-            axis=1
-        )
-        in_skeleton = jnp.logical_and(in_skeleton, is_do)
-        return None, jnp.logical_and(in_skeleton, state.skeletons.mask[skeleton_index])
+    # # Skeleton
+    # def is_attacking_skeleton_at_index(unused, skeleton_index):
+    #     in_skeleton = (state.skeletons.position[skeleton_index] == block_position).all(
+    #         axis=1
+    #     )
+    #     in_skeleton = jnp.logical_and(in_skeleton, is_do)
+    #     return None, jnp.logical_and(in_skeleton, state.skeletons.mask[skeleton_index])
 
-    _, is_attacking_skeleton_array = jax.lax.scan(
-        is_attacking_skeleton_at_index, None, jnp.arange(static_params.max_skeletons)
-    )
-    is_attacking_skeleton = is_attacking_skeleton_array.sum(axis=0) > 0
-    target_skeleton_index = jnp.argmax(is_attacking_skeleton_array, axis=0)
-    new_skeletons = state.skeletons
+    # _, is_attacking_skeleton_array = jax.lax.scan(
+    #     is_attacking_skeleton_at_index, None, jnp.arange(static_params.max_skeletons)
+    # )
+    # is_attacking_skeleton = is_attacking_skeleton_array.sum(axis=0) > 0
+    # target_skeleton_index = jnp.argmax(is_attacking_skeleton_array, axis=0)
+    # new_skeletons = state.skeletons
 
-    new_skeleton_health = new_skeletons.health.at[target_skeleton_index].add(
-        -get_player_attack_damage(state) * is_attacking_skeleton
-    )
-    new_skeletons = new_skeletons.replace(health=new_skeleton_health)
+    # new_skeleton_health = new_skeletons.health.at[target_skeleton_index].add(
+    #     -get_player_attack_damage(state) * is_attacking_skeleton
+    # )
+    # new_skeletons = new_skeletons.replace(health=new_skeleton_health)
 
-    old_mask = new_skeletons.mask[target_skeleton_index]
-    new_skeletons = new_skeletons.replace(mask=new_skeletons.health > 0)
-    did_kill_skeleton = jnp.logical_and(
-        old_mask, jnp.logical_not(new_skeletons.mask[target_skeleton_index])
-    )
-    new_achievements = state.achievements.at[:, Achievement.DEFEAT_SKELETON.value].set(
-        jnp.logical_or(
-            state.achievements[:, Achievement.DEFEAT_SKELETON.value], did_kill_skeleton
-        )
-    )
+    # old_mask = new_skeletons.mask[target_skeleton_index]
+    # new_skeletons = new_skeletons.replace(mask=new_skeletons.health > 0)
+    # did_kill_skeleton = jnp.logical_and(
+    #     old_mask, jnp.logical_not(new_skeletons.mask[target_skeleton_index])
+    # )
+    # new_achievements = state.achievements.at[:, Achievement.DEFEAT_SKELETON.value].set(
+    #     jnp.logical_or(
+    #         state.achievements[:, Achievement.DEFEAT_SKELETON.value], did_kill_skeleton
+    #     )
+    # )
 
-    state = state.replace(skeletons=new_skeletons)
+    # state = state.replace(skeletons=new_skeletons)
     state = state.replace(achievements=new_achievements)
 
-    did_attack_mob = jnp.logical_or(
-        jnp.logical_or(is_attacking_zombie, is_attacking_cow), is_attacking_skeleton
-    )
+    did_attack_mob = is_attacking_cow
+    did_kill_mob = did_kill_cow
 
-    did_kill_mob = jnp.logical_or(
-        jnp.logical_or(did_kill_zombie, did_kill_cow), did_kill_skeleton
-    )
+    # did_attack_mob = jnp.logical_or(
+    #     jnp.logical_or(is_attacking_zombie, is_attacking_cow), is_attacking_skeleton
+    # )
+
+    # did_kill_mob = jnp.logical_or(
+    #     jnp.logical_or(did_kill_zombie, did_kill_cow), did_kill_skeleton
+    # )
+
     state = state.replace(
         mob_map=state.mob_map.at[block_position[:, 0], block_position[:, 1]].set(
             jnp.logical_and(
@@ -284,7 +320,11 @@ def do_action(rng, state, action, static_params):
     )
 
     # BLOCKS
-
+    """
+    This can be useful when mining trees or mining water
+    - everything is a block and it will be replaced with the associated block
+    - when water and a tree is mined, it is replaced with an air block
+    """
     # This is a function we use to scan to update the map
     def _get_update_block(pred: jax.Array, replace_block_type: int):
         """
@@ -304,6 +344,9 @@ def do_action(rng, state, action, static_params):
 
         return _update_block
 
+    """
+    Look into the achievements object
+    """
     # Tree
     can_mine_tree = True
     is_mining_tree = jnp.logical_and(
@@ -440,6 +483,7 @@ def do_action(rng, state, action, static_params):
         )
     )
 
+
     # Sapling
     rng, _rng = jax.random.split(rng)
     is_mining_sapling = jnp.logical_and(
@@ -457,6 +501,10 @@ def do_action(rng, state, action, static_params):
         )
     )
 
+    """
+    This is the action to optimize for the learner agent
+    In getting the water that is needed
+    """
     # Water
     is_drinking_water = (
         state.map[block_position[:, 0], block_position[:, 1]] == BlockType.WATER.value
@@ -474,6 +522,10 @@ def do_action(rng, state, action, static_params):
         )
     )
 
+    """
+    Maybe for later, in the case where the sapling is planted 
+    - then afterwards the player can eat it once it is ripe
+    """
     # Plant
     is_eating_plant = (
         state.map[block_position[:, 0], block_position[:, 1]]
@@ -510,9 +562,9 @@ def do_action(rng, state, action, static_params):
     )
 
     # Update plant
-    new_growing_plants_age = update_plants_with_eat(
-        state, block_position, static_params, action_block_in_bounds
-    )
+    # new_growing_plants_age = update_plants_with_eat(
+    #     state, block_position, static_params, action_block_in_bounds
+    # )
 
     # new_map = jax.lax.select(action_block_in_bounds, new_map, state.map)
     new_map = new_map.at[block_position[:, 0], block_position[:, 1]].set(
@@ -551,7 +603,7 @@ def do_action(rng, state, action, static_params):
         player_thirst=new_thirst,
         player_food=new_food,
         player_hunger=new_hunger,
-        growing_plants_age=new_growing_plants_age,
+        # growing_plants_age=new_growing_plants_age,
         achievements=new_achievements,
     )
 
@@ -566,7 +618,9 @@ def do_action(rng, state, action, static_params):
 
     return state
 
-
+"""
+This is to see if a block is in the surronding 8 squares
+"""
 def is_near_block(state, block_type):
     """
     Checks if block is in the 8 squares adjacent to the users
@@ -585,6 +639,12 @@ def is_near_block(state, block_type):
     return is_block.sum(axis=0) > 0
 
 
+#################################################################################################################################
+"""
+Do not need to worry about this function 
+- as of now, keeping it simple, and mainly 
+  focusing on DO actions and basic movements
+"""
 def do_crafting(state, action):
     """
     Craft given item if user has sufficient inventory and
@@ -743,6 +803,14 @@ def do_crafting(state, action):
     return state
 
 
+"""
+There is no safeguard to check that you have a sapling available
+- basically it will plant even if you do not have a plant 
+- you can basically waste an action
+
+Note: Focus on using this action later for testing, get more 
+simpler cases to work first
+"""
 def add_new_growing_plant(state, position, is_placing_sapling, static_params):
     def _is_empty(unused, index):
         return None, jnp.logical_not(state.growing_plants_mask[index])
@@ -813,7 +881,11 @@ def calculate_light_level(timestep, params):
     progress = (timestep / params.day_length) % 1 + 0.3
     return 1 - jnp.abs(jnp.cos(jnp.pi * progress)) ** 3
 
-
+"""
+Similar to placing a sapling, this can be done where one can:
+- cut down the trees
+- place down blocks to build various structures
+"""
 def place_block(state, action, static_params):
     placing_block_position = state.player_position + DIRECTIONS[state.player_direction]
     placing_block_in_bounds = in_bounds_vec(state, placing_block_position)
@@ -941,13 +1013,13 @@ def place_block(state, action, static_params):
             new_achievements[:, Achievement.PLACE_PLANT.value], is_placing_sapling
         )
     )
-    (
-        new_growing_plants_positions,
-        new_growing_plants_age,
-        new_growing_plants_mask,
-    ) = add_new_growing_plant(
-        state, placing_block_position, is_placing_sapling, static_params
-    )
+    # (
+    #     new_growing_plants_positions,
+    #     new_growing_plants_age,
+    #     new_growing_plants_mask,
+    # ) = add_new_growing_plant(
+    #     state, placing_block_position, is_placing_sapling, static_params
+    # )
 
     # Do?
 
@@ -984,9 +1056,9 @@ def place_block(state, action, static_params):
         map=new_map,
         inventory=new_inventory,
         achievements=new_achievements,
-        growing_plants_positions=new_growing_plants_positions,
-        growing_plants_age=new_growing_plants_age,
-        growing_plants_mask=new_growing_plants_mask,
+        # growing_plants_positions=new_growing_plants_positions,
+        # growing_plants_age=new_growing_plants_age,
+        # growing_plants_mask=new_growing_plants_mask,
     )
 
     return state
@@ -1195,10 +1267,10 @@ def update_mobs(rng, state, params, static_params):
 
         return (_rng, state), None
 
-    rng, _rng = jax.random.split(rng)
-    (rng, new_state), _ = jax.lax.scan(
-        _move_zombie, (rng, state), jnp.arange(static_params.max_zombies)
-    )
+    # rng, _rng = jax.random.split(rng)
+    # (rng, new_state), _ = jax.lax.scan(
+    #     _move_zombie, (rng, state), jnp.arange(static_params.max_zombies)
+    # )
 
     # Move cows
     def _move_cow(rng_and_state, cow_index):
@@ -1264,9 +1336,10 @@ def update_mobs(rng, state, params, static_params):
 
         return (rng, state), None
 
+
     rng, _rng = jax.random.split(rng)
     (rng, new_state), _ = jax.lax.scan(
-        _move_cow, (rng, new_state), jnp.arange(static_params.max_cows)
+        _move_cow, (rng, state), jnp.arange(static_params.max_cows)
     )
 
     # Move skeletons
@@ -1473,10 +1546,10 @@ def update_mobs(rng, state, params, static_params):
 
         return (rng, state), None
 
-    rng, _rng = jax.random.split(rng)
-    (rng, new_state), _ = jax.lax.scan(
-        _move_skeleton, (rng, new_state), jnp.arange(static_params.max_skeletons)
-    )
+    # rng, _rng = jax.random.split(rng)
+    # (rng, new_state), _ = jax.lax.scan(
+    #     _move_skeleton, (rng, new_state), jnp.arange(static_params.max_skeletons)
+    # )
 
     # Move arrows
     def _move_arrow(rng_and_state, arrow_index):
@@ -1539,10 +1612,10 @@ def update_mobs(rng, state, params, static_params):
 
         return (rng, state), None
 
-    rng, _rng = jax.random.split(rng)
-    (rng, new_state), _ = jax.lax.scan(
-        _move_arrow, (rng, new_state), jnp.arange(static_params.max_arrows)
-    )
+    # rng, _rng = jax.random.split(rng)
+    # (rng, new_state), _ = jax.lax.scan(
+    #     _move_arrow, (rng, new_state), jnp.arange(static_params.max_arrows)
+    # )
 
     return new_state
 
@@ -1838,172 +1911,176 @@ def spawn_mobs(state, rng, params, static_params):
         ),
     )
 
-    # Zombies
-    can_spawn_zombie = state.zombies.mask.sum() < static_params.max_zombies
+    # # Zombies
+    # can_spawn_zombie = state.zombies.mask.sum() < static_params.max_zombies
 
-    rng, _rng = jax.random.split(rng)
-    zombie_spawn_chance = (
-        params.spawn_zombie_base_chance
-        + params.spawn_zombie_night_chance * jnp.square(1 - state.light_level)
-    )
-    can_spawn_zombie = jnp.logical_and(
-        can_spawn_zombie, jax.random.uniform(_rng) < zombie_spawn_chance
-    )
+    # rng, _rng = jax.random.split(rng)
+    # zombie_spawn_chance = (
+    #     params.spawn_zombie_base_chance
+    #     + params.spawn_zombie_night_chance * jnp.square(1 - state.light_level)
+    # )
+    # can_spawn_zombie = jnp.logical_and(
+    #     can_spawn_zombie, jax.random.uniform(_rng) < zombie_spawn_chance
+    # )
 
-    grass_map = state.map == BlockType.GRASS.value
-    path_map = state.map == BlockType.PATH.value
-    zombies_can_spawn_map = jnp.logical_or(grass_map, path_map)
-    zombies_can_spawn_map = jnp.logical_and(
-        zombies_can_spawn_map, player_distance_map > 9
-    )
-    zombies_can_spawn_map = jnp.logical_and(
-        zombies_can_spawn_map, player_distance_map < params.mob_despawn_distance
-    )
-    zombies_can_spawn_map = jnp.logical_and(
-        zombies_can_spawn_map, jnp.logical_not(state.mob_map)
-    )
+    # grass_map = state.map == BlockType.GRASS.value
+    # path_map = state.map == BlockType.PATH.value
+    # zombies_can_spawn_map = jnp.logical_or(grass_map, path_map)
+    # zombies_can_spawn_map = jnp.logical_and(
+    #     zombies_can_spawn_map, player_distance_map > 9
+    # )
+    # zombies_can_spawn_map = jnp.logical_and(
+    #     zombies_can_spawn_map, player_distance_map < params.mob_despawn_distance
+    # )
+    # zombies_can_spawn_map = jnp.logical_and(
+    #     zombies_can_spawn_map, jnp.logical_not(state.mob_map)
+    # )
 
-    can_spawn_zombie = jnp.logical_and(
-        can_spawn_zombie, zombies_can_spawn_map.sum() > 0
-    )
+    # can_spawn_zombie = jnp.logical_and(
+    #     can_spawn_zombie, zombies_can_spawn_map.sum() > 0
+    # )
 
-    rng, _rng = jax.random.split(rng)
-    zombie_position = jax.random.choice(
-        _rng,
-        jnp.arange(static_params.map_size[0] * static_params.map_size[1]),
-        shape=(1,),
-        p=jnp.reshape(zombies_can_spawn_map, -1) / jnp.sum(zombies_can_spawn_map),
-    )
-    zombie_position = jnp.array(
-        [
-            zombie_position // static_params.map_size[0],
-            zombie_position % static_params.map_size[1],
-        ]
-    ).T.astype(jnp.int32)[0]
+    # rng, _rng = jax.random.split(rng)
+    # zombie_position = jax.random.choice(
+    #     _rng,
+    #     jnp.arange(static_params.map_size[0] * static_params.map_size[1]),
+    #     shape=(1,),
+    #     p=jnp.reshape(zombies_can_spawn_map, -1) / jnp.sum(zombies_can_spawn_map),
+    # )
+    # zombie_position = jnp.array(
+    #     [
+    #         zombie_position // static_params.map_size[0],
+    #         zombie_position % static_params.map_size[1],
+    #     ]
+    # ).T.astype(jnp.int32)[0]
 
-    new_zombie_index = jnp.argmax(jnp.logical_not(state.zombies.mask))
+    # new_zombie_index = jnp.argmax(jnp.logical_not(state.zombies.mask))
 
-    new_zombie_position = jax.lax.select(
-        can_spawn_zombie,
-        zombie_position,
-        state.zombies.position[new_zombie_index],
-    )
+    # new_zombie_position = jax.lax.select(
+    #     can_spawn_zombie,
+    #     zombie_position,
+    #     state.zombies.position[new_zombie_index],
+    # )
 
-    new_zombie_health = jax.lax.select(
-        can_spawn_zombie,
-        params.zombie_health,
-        state.zombies.health[new_zombie_index],
-    )
+    # new_zombie_health = jax.lax.select(
+    #     can_spawn_zombie,
+    #     params.zombie_health,
+    #     state.zombies.health[new_zombie_index],
+    # )
 
-    new_zombie_mask = jax.lax.select(
-        can_spawn_zombie,
-        True,
-        state.zombies.mask[new_zombie_index],
-    )
+    # new_zombie_mask = jax.lax.select(
+    #     can_spawn_zombie,
+    #     True,
+    #     state.zombies.mask[new_zombie_index],
+    # )
 
-    zombies = Mobs(
-        position=state.zombies.position.at[new_zombie_index].set(new_zombie_position),
-        health=state.zombies.health.at[new_zombie_index].set(new_zombie_health),
-        mask=state.zombies.mask.at[new_zombie_index].set(new_zombie_mask),
-        attack_cooldown=state.zombies.attack_cooldown,
-    )
+    # zombies = Mobs(
+    #     position=state.zombies.position.at[new_zombie_index].set(new_zombie_position),
+    #     health=state.zombies.health.at[new_zombie_index].set(new_zombie_health),
+    #     mask=state.zombies.mask.at[new_zombie_index].set(new_zombie_mask),
+    #     attack_cooldown=state.zombies.attack_cooldown,
+    # )
 
-    state = state.replace(
-        zombies=zombies,
-        mob_map=state.mob_map.at[new_zombie_position[0], new_zombie_position[1]].set(
-            jnp.logical_or(
-                state.mob_map[new_zombie_position[0], new_zombie_position[1]],
-                new_zombie_mask,
-            )
-        ),
-    )
+    # state = state.replace(
+    #     zombies=zombies,
+    #     mob_map=state.mob_map.at[new_zombie_position[0], new_zombie_position[1]].set(
+    #         jnp.logical_or(
+    #             state.mob_map[new_zombie_position[0], new_zombie_position[1]],
+    #             new_zombie_mask,
+    #         )
+    #     ),
+    # )
 
-    # Skeletons
-    can_spawn_skeleton = state.skeletons.mask.sum() < static_params.max_skeletons
+    # # Skeletons
+    # can_spawn_skeleton = state.skeletons.mask.sum() < static_params.max_skeletons
 
-    rng, _rng = jax.random.split(rng)
-    can_spawn_skeleton = jnp.logical_and(
-        can_spawn_skeleton, jax.random.uniform(_rng) < params.spawn_skeleton_chance
-    )
+    # rng, _rng = jax.random.split(rng)
+    # can_spawn_skeleton = jnp.logical_and(
+    #     can_spawn_skeleton, jax.random.uniform(_rng) < params.spawn_skeleton_chance
+    # )
 
-    skeletons_can_spawn_map = state.map == BlockType.PATH.value
-    skeletons_can_spawn_map = jnp.logical_and(
-        skeletons_can_spawn_map, player_distance_map > 9
-    )
-    skeletons_can_spawn_map = jnp.logical_and(
-        skeletons_can_spawn_map, player_distance_map < params.mob_despawn_distance
-    )
-    skeletons_can_spawn_map = jnp.logical_and(
-        skeletons_can_spawn_map, jnp.logical_not(state.mob_map)
-    )
+    # skeletons_can_spawn_map = state.map == BlockType.PATH.value
+    # skeletons_can_spawn_map = jnp.logical_and(
+    #     skeletons_can_spawn_map, player_distance_map > 9
+    # )
+    # skeletons_can_spawn_map = jnp.logical_and(
+    #     skeletons_can_spawn_map, player_distance_map < params.mob_despawn_distance
+    # )
+    # skeletons_can_spawn_map = jnp.logical_and(
+    #     skeletons_can_spawn_map, jnp.logical_not(state.mob_map)
+    # )
 
-    can_spawn_skeleton = jnp.logical_and(
-        can_spawn_skeleton, skeletons_can_spawn_map.sum() > 0
-    )
+    # can_spawn_skeleton = jnp.logical_and(
+    #     can_spawn_skeleton, skeletons_can_spawn_map.sum() > 0
+    # )
 
-    rng, _rng = jax.random.split(rng)
-    skeleton_position = jax.random.choice(
-        _rng,
-        jnp.arange(static_params.map_size[0] * static_params.map_size[1]),
-        shape=(1,),
-        p=jnp.reshape(skeletons_can_spawn_map, -1) / jnp.sum(skeletons_can_spawn_map),
-    )
-    skeleton_position = jnp.array(
-        [
-            skeleton_position // static_params.map_size[0],
-            skeleton_position % static_params.map_size[1],
-        ]
-    ).T.astype(jnp.int32)[0]
+    # rng, _rng = jax.random.split(rng)
+    # skeleton_position = jax.random.choice(
+    #     _rng,
+    #     jnp.arange(static_params.map_size[0] * static_params.map_size[1]),
+    #     shape=(1,),
+    #     p=jnp.reshape(skeletons_can_spawn_map, -1) / jnp.sum(skeletons_can_spawn_map),
+    # )
+    # skeleton_position = jnp.array(
+    #     [
+    #         skeleton_position // static_params.map_size[0],
+    #         skeleton_position % static_params.map_size[1],
+    #     ]
+    # ).T.astype(jnp.int32)[0]
 
-    new_skeleton_index = jnp.argmax(jnp.logical_not(state.skeletons.mask))
+    # new_skeleton_index = jnp.argmax(jnp.logical_not(state.skeletons.mask))
 
-    new_skeleton_position = jax.lax.select(
-        can_spawn_skeleton,
-        skeleton_position,
-        state.skeletons.position[new_skeleton_index],
-    )
+    # new_skeleton_position = jax.lax.select(
+    #     can_spawn_skeleton,
+    #     skeleton_position,
+    #     state.skeletons.position[new_skeleton_index],
+    # )
 
-    new_skeleton_health = jax.lax.select(
-        can_spawn_skeleton,
-        params.skeleton_health,
-        state.skeletons.health[new_skeleton_index],
-    )
+    # new_skeleton_health = jax.lax.select(
+    #     can_spawn_skeleton,
+    #     params.skeleton_health,
+    #     state.skeletons.health[new_skeleton_index],
+    # )
 
-    new_skeleton_mask = jax.lax.select(
-        can_spawn_skeleton,
-        True,
-        state.skeletons.mask[new_skeleton_index],
-    )
+    # new_skeleton_mask = jax.lax.select(
+    #     can_spawn_skeleton,
+    #     True,
+    #     state.skeletons.mask[new_skeleton_index],
+    # )
 
-    skeletons = Mobs(
-        position=state.skeletons.position.at[new_skeleton_index].set(
-            new_skeleton_position
-        ),
-        health=state.skeletons.health.at[new_skeleton_index].set(new_skeleton_health),
-        mask=state.skeletons.mask.at[new_skeleton_index].set(new_skeleton_mask),
-        attack_cooldown=state.skeletons.attack_cooldown,
-    )
+    # skeletons = Mobs(
+    #     position=state.skeletons.position.at[new_skeleton_index].set(
+    #         new_skeleton_position
+    #     ),
+    #     health=state.skeletons.health.at[new_skeleton_index].set(new_skeleton_health),
+    #     mask=state.skeletons.mask.at[new_skeleton_index].set(new_skeleton_mask),
+    #     attack_cooldown=state.skeletons.attack_cooldown,
+    # )
 
-    state = state.replace(
-        skeletons=skeletons,
-        mob_map=state.mob_map.at[
-            new_skeleton_position[0], new_skeleton_position[1]
-        ].set(
-            jnp.logical_or(
-                state.mob_map[new_skeleton_position[0], new_skeleton_position[1]],
-                new_skeleton_mask,
-            )
-        ),
-    )
+    # state = state.replace(
+    #     skeletons=skeletons,
+    #     mob_map=state.mob_map.at[
+    #         new_skeleton_position[0], new_skeleton_position[1]
+    #     ].set(
+    #         jnp.logical_or(
+    #             state.mob_map[new_skeleton_position[0], new_skeleton_position[1]],
+    #             new_skeleton_mask,
+    #         )
+    #     ),
+    # )
 
     return state
 
 
+"""
+Set this to a higher value to priortize learning of 
+gathering items such as wood and water
+"""
 def cap_inventory(state):
     """
-    Limit inventory to 9 items
+    Limit inventory to 20 items
     """
-    capped_inv = jax.tree_util.tree_map(lambda x: jnp.minimum(x, 9), state.inventory)
+    capped_inv = jax.tree_util.tree_map(lambda x: jnp.minimum(x, 20), state.inventory)
 
     state = state.replace(inventory=capped_inv)
 
@@ -2168,6 +2245,9 @@ def restrict_movement(rng, state, action):
     return action
 
 
+"""#########################################################################################################################
+Look into this: modify as needed for the craftax_step
+"""
 def craftax_step(rng, state, actions, params, static_params):
     init_achievements = state.achievements
     init_health = state.player_health
@@ -2207,7 +2287,7 @@ def craftax_step(rng, state, actions, params, static_params):
     state = spawn_mobs(state, _rng, params, static_params)
 
     # Plants
-    state = update_plants(state, static_params)
+    # state = update_plants(state, static_params)
 
     # Intrinsics
     state = update_player_intrinsics(state, actions)

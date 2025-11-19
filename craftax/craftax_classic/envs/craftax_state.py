@@ -118,21 +118,27 @@ class EnvState:
 
 @struct.dataclass
 class EnvParams:
+
+    """
+    Also set these to 0 as well
+    """
+
     max_timesteps: int = 10000
     day_length: int = 300
 
     always_diamond: bool = True
 
-    zombie_health: int = 5
+    zombie_health: int = 0
     cow_health: int = 3
-    skeleton_health: int = 3
+    skeleton_health: int = 0
 
+    # not nessecary
     mob_despawn_distance: int = 14
 
     spawn_cow_chance: float = 0.3
-    spawn_zombie_base_chance: float = 0.02
-    spawn_zombie_night_chance: float = 0.1
-    spawn_skeleton_chance: float = 0.05
+    spawn_zombie_base_chance: float = 0.0
+    spawn_zombie_night_chance: float = 0.0
+    spawn_skeleton_chance: float = 0.0
 
     fractal_noise_angles: tuple[int | None, int | None, int | None, int | None] = (
         None,
@@ -144,18 +150,70 @@ class EnvParams:
     god_mode: bool = False
     """Turn this on to not die lol"""
 
-    achievement_weights = jnp.ones(len(Achievement))
+    """
+    Set these to certain values, make an array, and set the one for the 
+    current policy you are trying to train to 1, while the other ones to zero
+
+    - wood to one for the first set of agents 
+    - water to 1 for the learning agent
+    """
+
+    """
+    class Achievement(Enum):
+        COLLECT_WOOD = 0
+        PLACE_TABLE = 1
+        EAT_COW = 2
+        COLLECT_SAPLING = 3
+        COLLECT_DRINK = 4
+        MAKE_WOOD_PICKAXE = 5
+        MAKE_WOOD_SWORD = 6
+        PLACE_PLANT = 7
+        DEFEAT_ZOMBIE = 8
+        COLLECT_STONE = 9
+        PLACE_STONE = 10
+        EAT_PLANT = 11
+        DEFEAT_SKELETON = 12
+        MAKE_STONE_PICKAXE = 13
+        MAKE_STONE_SWORD = 14
+        WAKE_UP = 15
+        PLACE_FURNACE = 16
+        COLLECT_COAL = 17
+        COLLECT_IRON = 18
+        COLLECT_DIAMOND = 19
+        MAKE_IRON_PICKAXE = 20
+        MAKE_IRON_SWORD = 21
+    """
+    # achievement_weights = jnp.ones(len(Achievement))
+    achievement_weights = jnp.array([
+        1, 1, 1, 1, 5,
+        1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1,
+        1, 1,
+    ], dtype=jnp.float32)
+
     """If reward shaping is needed, adjust weights for different achievements"""
 
 
 @struct.dataclass
 class StaticEnvParams:
     num_players: int = 1
-    map_size: Tuple[int, int] = (64, 64)
+    map_size: Tuple[int, int] = (32, 32)
+
+    """
+    Modify the following so that there are
+    - no zombies
+    - no skeletons 
+    - no arrows
+    - no cows
+    - no growing plants 
+
+    Note: can later add back in for more complex tasks
+    """
 
     # Mobs
-    max_zombies: int = 3
-    max_cows: int = 10
-    max_growing_plants: int = 10
-    max_skeletons: int = 2
-    max_arrows: int = 3
+    max_zombies: int = 0
+    max_cows: int = 5
+    max_growing_plants: int = 0
+    max_skeletons: int = 0
+    max_arrows: int = 0
