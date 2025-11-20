@@ -147,8 +147,8 @@ def generate_world(rng, params: EnvParams, static_params: StaticEnvParams):
 
     # Lava
     lava_map = jnp.logical_and(
-        mountain > 0.85,
-        tree_noise > 0.7,
+        mountain > 0.7,
+        tree_noise > 0.4,
     )
     map = jnp.where(lava_map, BlockType.LAVA.value, map)
 
@@ -258,7 +258,7 @@ def generate_world(rng, params: EnvParams, static_params: StaticEnvParams):
         growing_plants_positions=growing_plants_positions,
         growing_plants_age=growing_plants_age,
         growing_plants_mask=growing_plants_mask,
-        achievements=jnp.zeros((static_params.num_players, len(Achievement)), dtype=bool),
+        achievements=jnp.zeros((static_params.num_players, len(Achievement)), dtype=int),
         light_level=calculate_light_level(0, params),
         state_rng=_rng,
         timestep=0,

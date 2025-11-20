@@ -369,9 +369,7 @@ def do_action(rng, state, action, static_params):
         wood=state.inventory.wood + 1 * is_mining_tree
     )
     new_achievements = new_achievements.at[:, Achievement.COLLECT_WOOD.value].set(
-        jnp.logical_or(
-            new_achievements[:, Achievement.COLLECT_WOOD.value], is_mining_tree
-        )
+        new_achievements[:, Achievement.COLLECT_WOOD.value] + is_mining_tree
     )
 
     # Stone
@@ -396,9 +394,7 @@ def do_action(rng, state, action, static_params):
         stone=state.inventory.stone + 1 * is_mining_stone
     )
     new_achievements = new_achievements.at[:, Achievement.COLLECT_STONE.value].set(
-        jnp.logical_or(
-            new_achievements[:, Achievement.COLLECT_STONE.value], is_mining_stone
-        )
+        new_achievements[:, Achievement.COLLECT_STONE.value] + is_mining_stone
     )
 
     # Coal
@@ -423,9 +419,7 @@ def do_action(rng, state, action, static_params):
         coal=state.inventory.coal + 1 * is_mining_coal
     )
     new_achievements = new_achievements.at[:, Achievement.COLLECT_COAL.value].set(
-        jnp.logical_or(
-            new_achievements[:, Achievement.COLLECT_COAL.value], is_mining_coal
-        )
+        new_achievements[:, Achievement.COLLECT_COAL.value] + is_mining_coal
     )
 
     # Iron
@@ -450,9 +444,7 @@ def do_action(rng, state, action, static_params):
         iron=state.inventory.iron + 1 * is_mining_iron
     )
     new_achievements = new_achievements.at[:, Achievement.COLLECT_IRON.value].set(
-        jnp.logical_or(
-            new_achievements[:, Achievement.COLLECT_IRON.value], is_mining_iron
-        )
+        new_achievements[:, Achievement.COLLECT_IRON.value] + is_mining_iron
     )
 
     # Diamond
@@ -478,11 +470,8 @@ def do_action(rng, state, action, static_params):
         diamond=state.inventory.diamond + 1 * is_mining_diamond
     )
     new_achievements = new_achievements.at[:, Achievement.COLLECT_DIAMOND.value].set(
-        jnp.logical_or(
-            new_achievements[:, Achievement.COLLECT_DIAMOND.value], is_mining_diamond
-        )
+        new_achievements[:, Achievement.COLLECT_DIAMOND.value] + is_mining_diamond
     )
-
 
     # Sapling
     rng, _rng = jax.random.split(rng)
@@ -496,9 +485,7 @@ def do_action(rng, state, action, static_params):
         sapling=state.inventory.sapling + 1 * is_mining_sapling
     )
     new_achievements = new_achievements.at[:, Achievement.COLLECT_SAPLING.value].set(
-        jnp.logical_or(
-            new_achievements[:, Achievement.COLLECT_SAPLING.value], is_mining_sapling
-        )
+        new_achievements[:, Achievement.COLLECT_SAPLING.value] + is_mining_sapling
     )
 
     """
@@ -517,9 +504,7 @@ def do_action(rng, state, action, static_params):
         is_drinking_water, jnp.zeros_like(state.player_thirst), state.player_thirst
     )
     new_achievements = new_achievements.at[:, Achievement.COLLECT_DRINK.value].set(
-        jnp.logical_or(
-            new_achievements[:, Achievement.COLLECT_DRINK.value], is_drinking_water
-        )
+        new_achievements[:, Achievement.COLLECT_DRINK.value] + is_drinking_water
     )
 
     """
@@ -550,9 +535,7 @@ def do_action(rng, state, action, static_params):
         is_eating_plant, jnp.zeros_like(state.player_hunger), state.player_hunger
     )
     new_achievements = new_achievements.at[:, Achievement.EAT_PLANT.value].set(
-        jnp.logical_or(
-            new_achievements[:, Achievement.EAT_PLANT.value], is_eating_plant
-        )
+        new_achievements[:, Achievement.EAT_PLANT.value] + is_eating_plant
     )
 
     # Check if action is in bounds
@@ -617,6 +600,7 @@ def do_action(rng, state, action, static_params):
     # )
 
     return state
+
 
 """
 This is to see if a block is in the surronding 8 squares
@@ -2310,7 +2294,6 @@ def craftax_step(rng, state, actions, params, static_params):
     """
     Cummalitive sum for all agents
     """
-    reward = reward.mean(axis=2).sum(axis=0)
 
     rng, _rng = jax.random.split(rng)
 

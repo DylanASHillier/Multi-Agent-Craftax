@@ -129,7 +129,7 @@ class EnvParams:
     always_diamond: bool = True
 
     zombie_health: int = 0
-    cow_health: int = 3
+    cow_health: int = 1
     skeleton_health: int = 0
 
     # not nessecary
@@ -198,7 +198,7 @@ class EnvParams:
 @struct.dataclass
 class StaticEnvParams:
     num_players: int = 1
-    map_size: Tuple[int, int] = (32, 32)
+    map_size: Tuple[int, int] = (16, 16)
 
     """
     Modify the following so that there are
@@ -213,7 +213,7 @@ class StaticEnvParams:
 
     # Mobs
     max_zombies: int = 0
-    max_cows: int = 5
+    max_cows: int = 15
     max_growing_plants: int = 0
     max_skeletons: int = 0
     max_arrows: int = 0
