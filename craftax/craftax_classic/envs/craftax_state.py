@@ -185,7 +185,7 @@ class EnvParams:
     """
     # achievement_weights = jnp.ones(len(Achievement))
     achievement_weights = jnp.array([
-        1, 1, 1, 1, 5,
+        5, 1, 1, 1, 1,
         1, 1, 1, 1, 1,
         1, 1, 1, 1, 1,
         1, 1, 1, 1, 1,

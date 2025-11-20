@@ -2300,8 +2300,17 @@ def craftax_step(rng, state, actions, params, static_params):
         (state.achievements.astype(jnp.float32) - init_achievements.astype(jnp.float32))
         * params.achievement_weights
     ).sum(axis=1)
-    health_reward = (state.player_health - init_health) * 0.1
-    reward = achievement_reward + health_reward
+
+    # health_reward = (state.player_health - init_health) * 0.1
+    
+    # reward = achievement_reward + health_reward
+
+    reward = achievement_reward
+
+    """
+    Cummalitive sum for all agents
+    """
+    reward = reward.mean(axis=2).sum(axis=0)
 
     rng, _rng = jax.random.split(rng)
 
