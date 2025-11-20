@@ -185,11 +185,11 @@ class EnvParams:
     """
     # achievement_weights = jnp.ones(len(Achievement))
     achievement_weights = jnp.array([
-        5, 1, 1, 1, 1,
-        1, 1, 1, 1, 1,
-        1, 1, 1, 1, 1,
-        1, 1, 1, 1, 1,
-        1, 1,
+        10, 0, 0, 0, 0,
+        0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0,
+        0, 0,
     ], dtype=jnp.float32)
 
     """If reward shaping is needed, adjust weights for different achievements"""

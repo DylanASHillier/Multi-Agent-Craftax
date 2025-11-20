@@ -49,7 +49,7 @@ metacontroller = ClassicMetaController(
     num_minibatches=1,
     static_parameters=StaticEnvParams(num_players=agents),
     fixed_timesteps=False,
-    num_steps=10000,
+    num_steps=1000000,
     wandb_project="MARLCraftax"
 )
 
@@ -71,17 +71,17 @@ metacontroller.rng = jax.random.PRNGKey(4253)
 Load in the model parameters:
 - this can be loaded in from - wandb/run-20251117_181137-zhpsz0t7/logs/model_iter_80.pickle
 """
-ckpt_path = "wandb/run-20251117_181137-zhpsz0t7/files/model_iter_80.pickle"
+# ckpt_path = "wandb/run-20251117_181137-zhpsz0t7/files/model_iter_80.pickle"
 
-with open(ckpt_path, "rb") as f:
-    ckpt = pickle.load(f)   # ckpt is your top-level tuple
+# with open(ckpt_path, "rb") as f:
+#     ckpt = pickle.load(f)   # ckpt is your top-level tuple
 
 """
 This will train the learning agent with 
 all of the expert agents
 """
 print("Training ippo agent... ")
-metacontroller.train(ckpt)
+(params, aux_params), opt_state = metacontroller.train()
 
 """
 Here you will want to run one episode with the ippo parameters 
