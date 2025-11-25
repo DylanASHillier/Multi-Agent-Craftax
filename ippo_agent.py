@@ -83,18 +83,6 @@ def collect_episodes_for_specialist(
     params: Any,
     num_episodes: int,
 ) -> List[Dict[str, Any]]:
-    """
-    Run run_one_episode num_episodes times and return a list of demo dicts:
-      {
-        "agent_id": 0/1/2,
-        "task_name": "...",
-        "episode_idx": k,
-        "states":  ...,
-        "actions": ...,
-        "logits":  ...,
-        "rewards": ...
-      }
-    """
     demos = []
     for ep in range(num_episodes):
         print(f"[{task_name}] Running episode {ep+1}/{num_episodes}")
@@ -117,8 +105,6 @@ def collect_episodes_for_specialist(
 def save_episode_videos(states, task_name: str, fps: float = 15.0):
     """
     Save states from one episode to one MP4 per player.
-
-    states: list/array of EnvState over time (T steps)
     """
     if len(states) == 0:
         print(f"[{task_name}] No states to render, skipping video.")
@@ -159,10 +145,6 @@ def save_episode_videos(states, task_name: str, fps: float = 15.0):
 
 
 def save_task_pickle(task_name: str, demos: List[Dict[str, Any]]) -> str:
-    """
-    Save demos for a single task to a separate pickle file.
-    Format is the same list-of-dicts structure used in this script.
-    """
     filename = f"demos_{task_name}.pickle"
     with open(filename, "wb") as f:
         pickle.dump(demos, f)
@@ -178,9 +160,8 @@ def combine_task_pickles_to_flat(
     Load multiple per-task demo pickle files and combine them into a single list of
     [agent_id, state, action, logits, reward] records, then save to output_path.
 
-    Assumes each pickle contains a list of demo dicts with keys:
+    keys:
       "agent_id", "states", "actions", "logits", "rewards"
-    where each of states/actions/logits/rewards is time-major (T, ...).
     """
     combined: List[List[Any]] = []
 
@@ -216,22 +197,12 @@ def combine_task_pickles_to_flat(
 
 if __name__ == "__main__":
     # How many demo episodes per specialist to generate
-    NUM_EPISODES_PER_AGENT = 1  # <-- change this as you like
+    NUM_EPISODES_PER_AGENT = 1000
 
-    # ----------------------------------------------------------------
-    # 1) Train specialists
-    #    agent_id mapping:
-    #      0 -> wood specialist
-    #      1 -> drink specialist
-    #      2 -> cow specialist
-    # ----------------------------------------------------------------
     wood_mc, wood_params   = train_specialist("collect_wood",  WOOD_WEIGHTS)
     drink_mc, drink_params = train_specialist("collect_drink", DRINK_WEIGHTS)
     cow_mc, cow_params     = train_specialist("eat_cow",       COW_WEIGHTS)
 
-    # ----------------------------------------------------------------
-    # 2) Collect demo episodes from each specialist
-    # ----------------------------------------------------------------
     all_demos: List[Dict[str, Any]] = []
     task_pickle_paths: List[str] = []
 
@@ -275,10 +246,6 @@ if __name__ == "__main__":
     if len(cow_demos) > 0:
         save_episode_videos(cow_demos[-1]["states"], "eat_cow", fps=15.0)
 
-    # ----------------------------------------------------------------
-    # 3) Optionally: save everything to a single pickle file
-    #    (same list-of-episode-dicts format as before)
-    # ----------------------------------------------------------------
     output_path = "irl_demonstrations_specialists_all_tasks.pickle"
     with open(output_path, "wb") as f:
         pickle.dump(all_demos, f)
