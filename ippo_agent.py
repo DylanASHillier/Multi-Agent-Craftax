@@ -11,23 +11,19 @@ from craftax.craftax_classic.envs.craftax_state import EnvParams, StaticEnvParam
 from craftax.craftax_classic.train.metacontroller_bc_aux import ClassicMetaController
 from craftax.craftax_classic.renderer import render_craftax_pixels
 
-# -------------------------------------------------------------------
-# Achievement indices:
-#   0: COLLECT_WOOD
-#   2: EAT_COW
-#   4: COLLECT_DRINK
-# -------------------------------------------------------------------
 
 def make_empty_weights():
-    # Length should match EnvParams.achievement_weights (22 in your snippet)
     return jnp.zeros(22, dtype=jnp.float32)
 
-WOOD_WEIGHTS  = make_empty_weights().at[0].set(10.0)  # COLLECT_WOOD
-COW_WEIGHTS   = make_empty_weights().at[2].set(10.0)  # EAT_COW
-DRINK_WEIGHTS = make_empty_weights().at[4].set(10.0)  # COLLECT_DRINK
+WOOD_WEIGHTS  = make_empty_weights().at[0].set(10.0)
+COW_WEIGHTS   = make_empty_weights().at[2].set(10.0)
+DRINK_WEIGHTS = make_empty_weights().at[4].set(10.0)
 
 
-def make_metacontroller_for_task(achievement_weights, num_players: int = 2) -> ClassicMetaController:
+def make_metacontroller_for_task(
+    achievement_weights,
+    num_players: int = 2,
+) -> ClassicMetaController:
     """
     Create a ClassicMetaController configured for a specific task via achievement_weights.
     """
@@ -54,7 +50,6 @@ def make_metacontroller_for_task(achievement_weights, num_players: int = 2) -> C
         aux_coef=0.1,
     )
 
-    # Set RNG seed for reproducibility (optional)
     metacontroller.rng = jax.random.PRNGKey(4253)
     return metacontroller
 
@@ -66,7 +61,7 @@ def train_specialist(task_name: str, weights: jnp.ndarray) -> Tuple[ClassicMetaC
     print(f"\n===== Training specialist for task: {task_name} =====")
     metacontroller = make_metacontroller_for_task(weights, num_players=2)
 
-    # Train -> returns (agent_params, aux_params)
+    # Train: returns (agent_params, aux_params)
     (params, aux_params), opt_state, log = metacontroller.train()
 
     # Save just the policy params if you want
@@ -114,11 +109,11 @@ def save_episode_videos(states, task_name: str, fps: float = 15.0):
     first_state = states[0]
     num_players = first_state.player_position.shape[0]
 
-    tile_size = 64  # adjust if your renderer uses a different tile size
+    tile_size = 64
 
     # Render a single frame to get frame size
     first_img = render_craftax_pixels(first_state, tile_size, num_players, 0)
-    first_frame = np.asarray(first_img, dtype=np.uint8)[..., ::-1]  # RGB -> BGR
+    first_frame = np.asarray(first_img, dtype=np.uint8)[..., ::-1]
     H, W = first_frame.shape[:2]
     frame_size = (W, H)
 
@@ -132,7 +127,7 @@ def save_episode_videos(states, task_name: str, fps: float = 15.0):
 
         for s in states:
             img = render_craftax_pixels(s, tile_size, num_players, player_idx)
-            frame = np.asarray(img, dtype=np.uint8)[..., ::-1]  # RGB -> BGR
+            frame = np.asarray(img, dtype=np.uint8)[..., ::-1] 
 
             if frame.shape[:2] != (H, W):
                 frame = cv2.resize(frame, frame_size, interpolation=cv2.INTER_NEAREST)
@@ -145,6 +140,9 @@ def save_episode_videos(states, task_name: str, fps: float = 15.0):
 
 
 def save_task_pickle(task_name: str, demos: List[Dict[str, Any]]) -> str:
+    """
+    Save the list of episode-level demos for one task into a pickle file.
+    """
     filename = f"demos_{task_name}.pickle"
     with open(filename, "wb") as f:
         pickle.dump(demos, f)
@@ -156,13 +154,6 @@ def combine_task_pickles_to_flat(
     pickle_paths: List[str],
     output_path: str = "combined_flat_dataset.pickle",
 ):
-    """
-    Load multiple per-task demo pickle files and combine them into a single list of
-    [agent_id, state, action, logits, reward] records, then save to output_path.
-
-    keys:
-      "agent_id", "states", "actions", "logits", "rewards"
-    """
     combined: List[List[Any]] = []
 
     for path in pickle_paths:
@@ -177,7 +168,6 @@ def combine_task_pickles_to_flat(
             logits = demo["logits"]
             rewards = demo["rewards"]
 
-            # Assume time dimension is the first axis
             T = len(states)
             for t in range(T):
                 record = [
@@ -199,12 +189,15 @@ if __name__ == "__main__":
     # How many demo episodes per specialist to generate
     NUM_EPISODES_PER_AGENT = 1000
 
+    # 1) Train specialists
     wood_mc, wood_params   = train_specialist("collect_wood",  WOOD_WEIGHTS)
     drink_mc, drink_params = train_specialist("collect_drink", DRINK_WEIGHTS)
     cow_mc, cow_params     = train_specialist("eat_cow",       COW_WEIGHTS)
 
     all_demos: List[Dict[str, Any]] = []
     task_pickle_paths: List[str] = []
+
+    # 2) Collect demos & save per-task pickles + videos
 
     # agent 0: wood
     wood_demos = collect_episodes_for_specialist(
@@ -216,7 +209,6 @@ if __name__ == "__main__":
     )
     all_demos.extend(wood_demos)
     task_pickle_paths.append(save_task_pickle("collect_wood", wood_demos))
-    # video for last episode of this task
     if len(wood_demos) > 0:
         save_episode_videos(wood_demos[-1]["states"], "collect_wood", fps=15.0)
 
@@ -246,14 +238,12 @@ if __name__ == "__main__":
     if len(cow_demos) > 0:
         save_episode_videos(cow_demos[-1]["states"], "eat_cow", fps=15.0)
 
+    # 3) Save one big pickle with *all* episode-level demos
     output_path = "irl_demonstrations_specialists_all_tasks.pickle"
     with open(output_path, "wb") as f:
         pickle.dump(all_demos, f)
     print(f"\nSaved {len(all_demos)} demos to {output_path}")
     print("Agent mapping: 0=wood, 1=drink, 2=cow")
 
-    # ----------------------------------------------------------------
-    # 4) (Optional) Combine per-task pickle files into flat transitions
-    #    Uncomment this if you want to automatically build the flat dataset.
-    # ----------------------------------------------------------------
-    # combine_task_pickles_to_flat(task_pickle_paths, output_path="combined_flat_dataset.pickle")
+    # 4) Also create a flat transition dataset across all tasks
+    combine_task_pickles_to_flat(task_pickle_paths, output_path="combined_flat_dataset.pickle")
