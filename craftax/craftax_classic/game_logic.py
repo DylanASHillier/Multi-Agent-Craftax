@@ -25,7 +25,7 @@ def is_game_over(state, params):
       down, only lava is the main concern for health
     """
     # return ~params.god_mode & (done_steps | in_lava | is_dead)
-    return done_steps | in_lava
+    return done_steps | in_lava | is_dead
 
 
 
@@ -2285,11 +2285,17 @@ def craftax_step(rng, state, actions, params, static_params):
         * params.achievement_weights
     ).sum(axis=1)
 
-    # health_reward = (state.player_health - init_health) * 0.1
+    health_reward = (state.player_health - init_health) * 0.1
     
     # reward = achievement_reward + health_reward
 
-    reward = achievement_reward
+    in_lava = (
+        state.map[state.player_position[:, 0], state.player_position[:, 1]]
+        == BlockType.LAVA.value
+    )
+    lava_penalty = in_lava.astype(jnp.float32) * -10.0
+
+    reward = (achievement_reward + health_reward) + lava_penalty
 
     """
     Cummalitive sum for all agents

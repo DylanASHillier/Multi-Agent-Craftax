@@ -11,169 +11,64 @@ def generate_world(rng, params: EnvParams, static_params: StaticEnvParams):
     rng, _rng = jax.random.split(rng, num=2)
 
     player_position = jnp.array(
-        [[static_params.map_size[0] // 2, static_params.map_size[1] // 2]] * static_params.num_players
-    )
-
-    player_proximity_map = get_distance_map(player_position, static_params).astype(
-        jnp.float32
-    )
-    player_proximity_map /= 5.0
-    player_proximity_map = jnp.clip(player_proximity_map, 0.0, 1.0)
-
-    larger_res = (static_params.map_size[0] // 4, static_params.map_size[1] // 4)
-    large_res = (static_params.map_size[0] // 8, static_params.map_size[1] // 8)
-    small_res = (static_params.map_size[0] // 16, static_params.map_size[1] // 16)
-    x_res = (static_params.map_size[0] // 8, static_params.map_size[1] // 2)
-
-    # small_res = large_res
-    # x_res = large_res
-
-    water = generate_fractal_noise_2d(
-        _rng,
-        static_params.map_size,
-        small_res,
-        octaves=1,
-        override_angles=fractal_noise_angles[0],
-    )
-    water = water + player_proximity_map - 1.0
-
-    # Water
-    rng, _rng = jax.random.split(rng)
-    map = jnp.where(water > 0.4, BlockType.WATER.value, BlockType.GRASS.value)
-
-    # water = water - 0.15 * mountain + 0.15
-
-    # c_water_map = map == BlockType.WATER.value
-    # z = jnp.array([[0, 1, 0], [1, 0, 1], [0, 1, 0]])
-    # c_water_map = jsp.signal.convolve(c_water_map, z, mode="same")
-
-    sand_map = jnp.logical_and(
-        water < 0.75,
-        jnp.logical_and(
-            water > 0.6,
-            map != BlockType.WATER.value,
-        ),
-    )
-
-    # sand_map = jnp.logical_and(
-    #     sand_map,
-    #     c_water_map > 0.5,
-    # )
-
-    map = jnp.where(sand_map, BlockType.SAND.value, map)
-
-    # Mountain vs grass
-    mountain_threshold = 0.7
-
-    rng, _rng = jax.random.split(rng)
-    mountain = (
-        generate_fractal_noise_2d(
-            _rng,
-            static_params.map_size,
-            small_res,
-            octaves=1,
-            override_angles=fractal_noise_angles[1],
-        )
-        + 0.05
-    )
-    mountain = mountain + player_proximity_map - 1.0
-    map = jnp.where(mountain > mountain_threshold, BlockType.STONE.value, map)
-
-    # Paths
-    rng, _rng = jax.random.split(rng)
-    path_x = generate_fractal_noise_2d(
-        _rng,
-        static_params.map_size,
-        x_res,
-        octaves=1,
-        override_angles=fractal_noise_angles[2],
-    )
-    path = jnp.logical_and(mountain > mountain_threshold, path_x > 0.8)
-    map = jnp.where(path > 0.5, BlockType.PATH.value, map)
-
-    path_y = path_x.T
-    path = jnp.logical_and(mountain > mountain_threshold, path_y > 0.8)
-    map = jnp.where(path > 0.5, BlockType.PATH.value, map)
-
-    # Caves
-    rng, _rng = jax.random.split(rng)
-    caves = jnp.logical_and(mountain > 0.85, water > 0.4)
-    map = jnp.where(caves > 0.5, BlockType.PATH.value, map)
-
-    # Ores
-    rng, _rng = jax.random.split(rng)
-    coal_map = jnp.logical_and(
-        map == BlockType.STONE.value,
-        jax.random.uniform(_rng, static_params.map_size) < 0.04,
-    )
-    map = jnp.where(coal_map, BlockType.COAL.value, map)
-
-    rng, _rng = jax.random.split(rng)
-    iron_map = jnp.logical_and(
-        map == BlockType.STONE.value,
-        jax.random.uniform(_rng, static_params.map_size) < 0.03,
-    )
-    map = jnp.where(iron_map, BlockType.IRON.value, map)
-
-    rng, _rng = jax.random.split(rng)
-    diamond_map = jnp.logical_and(
-        mountain > 0.8, jax.random.uniform(_rng, static_params.map_size) < 0.005
-    )
-    diamond_map = jnp.logical_and(diamond_map, map == BlockType.STONE.value)
-    map = jnp.where(diamond_map, BlockType.DIAMOND.value, map)
-
-    # Trees
-    rng, _rng = jax.random.split(rng)
-
-    """
-    To impact the number of trees or lava
-    - lower the tree_threshold 
-    - lower the random threshold as well
-
-    original is: 0.5, 0.8
-    """
-    tree_noise = generate_fractal_noise_2d(
-        _rng,
-        static_params.map_size,
-        larger_res,
-        octaves=1,
-        override_angles=fractal_noise_angles[3],
-    )
-    tree = (tree_noise > 0.3) * jax.random.uniform(
-        rng, shape=static_params.map_size
-    ) > 0.6
-    tree = jnp.logical_and(tree, map == BlockType.GRASS.value)
-    map = jnp.where(tree, BlockType.TREE.value, map)
-
-    # Lava
-    lava_map = jnp.logical_and(
-        mountain > 0.7,
-        tree_noise > 0.4,
-    )
-    map = jnp.where(lava_map, BlockType.LAVA.value, map)
-
-    # Make sure player spawns on grass
-    map = map.at[player_position[0], player_position[1]].set(BlockType.GRASS.value)
-
-    # Add diamond if always_diamond flag is set
-    valid_diamond = (map.flatten() == BlockType.STONE.value).astype(jnp.float32)
-    rng, _rng = jax.random.split(rng)
-    diamond_index = jax.random.choice(
-        _rng,
-        jnp.arange(static_params.map_size[0] * static_params.map_size[1]),
-        p=valid_diamond / valid_diamond.sum(),
-    )
-    diamond_position = jnp.array(
         [
-            diamond_index // static_params.map_size[0],
-            diamond_index % static_params.map_size[0],
-        ]
+            [1, 0],  # Player 0
+            [7, 6],  # Player 1
+        ],
+        dtype=jnp.int32,
     )
-    diamond_replace_block = jax.lax.select(
-        params.always_diamond, BlockType.DIAMOND.value, BlockType.STONE.value
-    )
-    map = map.at[diamond_position[0], diamond_position[1]].set(diamond_replace_block)
 
+# ------------------------------------------------------------------
+    # FIXED 8x8 LAVA / GRASS / TREE MAP
+    # ------------------------------------------------------------------
+    # Optional: gate this with a flag in EnvParams, e.g. params.use_fixed_map
+    # and/or assert map_size is (8, 8).
+    #
+    # if getattr(params, "use_fixed_map", False) and tuple(static_params.map_size) == (8, 8):
+    #     use_fixed = True
+    # else:
+    #     use_fixed = False
+    #
+    # if use_fixed:
+    #     ... (use the fixed map below and skip noise-based worldgen)
+    # else:
+    #     ... (original code)
+    # ------------------------------------------------------------------
+
+    fixed_chars = [
+        "TLWLGLWT",
+        "GTTLTGWT",
+        "LWTGTLGT",
+        "TGTWGLGT",
+        "TGTGTGTG",
+        "TTGLGTGT",
+        "WLTLTGLG",
+        "TTTTGTGT",
+    ]
+
+
+    char_to_block = {
+        "G": BlockType.GRASS.value,
+        "L": BlockType.LAVA.value,
+        "T": BlockType.TREE.value,
+        "W": BlockType.WATER.value,
+    }
+
+
+    fixed_map = jnp.array(
+        [[char_to_block[c] for c in row] for row in fixed_chars],
+        dtype=jnp.int32,
+    )
+
+    # Make sure all players spawn is grass
+    fixed_map = fixed_map.at[player_position[:, 0], player_position[:, 1]].set(
+        BlockType.GRASS.value
+    )
+
+
+    map = fixed_map
+
+    
     # Zombies
 
     z_pos = jnp.zeros((static_params.max_zombies, 2), dtype=jnp.int32)
@@ -218,11 +113,64 @@ def generate_world(rng, params: EnvParams, static_params: StaticEnvParams):
 
     arrow_directions = jnp.ones((static_params.max_arrows, 2), dtype=jnp.int32)
 
-    # Cows
+    # # Cows
+    # cows = Mobs(
+    #     position=jnp.zeros((static_params.max_cows, 2), dtype=jnp.int32),
+    #     health=jnp.ones(static_params.max_cows, dtype=jnp.int32) * params.cow_health,
+    #     mask=jnp.zeros(static_params.max_cows, dtype=bool),
+    #     attack_cooldown=jnp.zeros(static_params.max_cows, dtype=jnp.int32),
+    # )
+
+    # Can you set the mask for the cows (position, mask)
+        # --------------------
+    # COWS – 7 hard-placed on grass tiles of fixed_chars
+    # --------------------
+    # Valid 'G' tiles in the new fixed_chars:
+    # (row, col): (0,4), (1,0), (1,5), (2,3), (2,6), (3,1), (3,4),
+    #             (3,6), (4,1), (4,3), (4,5), (4,7), (5,2), (5,4),
+    #             (5,6), (6,5), (6,7), (7,4), (7,6)
+    #
+    # We'll pick 7 of these that are safely away from the spawn.
+
+        # --------------------
+    # COWS – 12 hard-placed on grass tiles of fixed_chars
+    # --------------------
+    # We choose 12 grass positions, avoiding player spawns (1,0) and (7,6).
+    cow_positions_init = jnp.array(
+        [
+            [0, 4],  # G
+            [1, 5],  # G
+            [2, 3],  # G
+            [2, 6],  # G
+            [3, 1],  # G
+            [3, 4],  # G
+            [3, 6],  # G
+            [4, 1],  # G
+            [4, 3],  # G
+            [4, 5],  # G
+            [4, 7],  # G
+            [5, 2],  # G
+        ],
+        dtype=jnp.int32,
+    )
+
+    # Make sure we don't exceed capacity of the environment
+    num_init_cows = min(static_params.max_cows, cow_positions_init.shape[0])
+
+    # Full position array (max_cows slots), first num_init_cows filled
+    cow_positions = jnp.zeros((static_params.max_cows, 2), dtype=jnp.int32)
+    cow_positions = cow_positions.at[:num_init_cows].set(
+        cow_positions_init[:num_init_cows]
+    )
+
+    # Mask: first num_init_cows are alive / active
+    cow_mask = jnp.zeros(static_params.max_cows, dtype=bool)
+    cow_mask = cow_mask.at[:num_init_cows].set(True)
+
     cows = Mobs(
-        position=jnp.zeros((static_params.max_cows, 2), dtype=jnp.int32),
+        position=cow_positions,
         health=jnp.ones(static_params.max_cows, dtype=jnp.int32) * params.cow_health,
-        mask=jnp.zeros(static_params.max_cows, dtype=bool),
+        mask=cow_mask,
         attack_cooldown=jnp.zeros(static_params.max_cows, dtype=jnp.int32),
     )
 

@@ -1,0 +1,39 @@
+Bootstrap: docker
+From: nvcr.io/nvidia/cuda:11.8.0-devel-rockylinux8
+
+%setup
+    # Append the Slurm UID/GID from the node to the container:
+    grep ^slurm: /etc/passwd >> ${APPTAINER_ROOTFS}/etc/passwd
+    grep ^slurm: /etc/group >> ${APPTAINER_ROOTFS}/etc/group
+
+%files
+    # Copy the Hyak Slurm repository and the Hyak user tools
+    # libraries and executables:
+    /etc/yum.repos.d/hyak-slurm.repo
+    /opt/hyak-user-tools
+    /usr/local/bin/hyak*
+
+%post
+    # Install the 'core' and 'standard' package groups,
+    # Slurm from the Hyak repo, and Python 3.9 for the
+    # Hyak user tools:
+    dnf install --assumeyes --allowerasing --nobest\
+      @core @standard slurm python39
+
+    # Create the directories & links for proper bind-mounting:
+    mkdir /scr /mmfs1
+    ln --symbolic /mmfs1/sw /sw
+    ln --symbolic /mmfs1/data /data
+    ln --symbolic /mmfs1/gscratch /gscratch
+
+%runscript
+    case ${@} in
+        "")
+            # Launch an interactive shell if no arguments are given:
+            exec /bin/bash
+            ;;
+        *)
+            # If any arguments are given, attempt to run them as a command:
+            exec ${@}
+            ;;
+    esac

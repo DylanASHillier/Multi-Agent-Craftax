@@ -1,0 +1,21 @@
+#!/bin/bash
+#SBATCH --job-name=container-build
+#SBATCH --cpus-per-task=1
+#SBATCH --mem=16GB
+#SBATCH --partition=ckpt
+#SBATCH --time=60
+#SBATCH --output=%x_%j.out
+
+# The lines above are called sbatch directives (i.e., flags that pass specifications of your job request to SLURM). 
+# Let's go through each:
+# --job-name=container-build -> this line gives the job the name "container-build"
+# --cpus-per-task=1 -> this line requests on CPU for this job
+# --mem=16GB -> this line requests on 16GB of RAM for this job
+# --partition=ckpt -> this line submits the job to the ckpt partition; you can change this if you have access to other partitions (view your partitions with hyakalloc)
+# --time=60 -> this line sets a maximum time limit of 60 minutes for this job; the clock starts when the job starts, not when it is subitted
+# --output=%x_%j.out -> saved all output messages that print to the screen (i.e., stdout) to a file called container-build_XXXXXX.out 
+# (using the shorthand %x to stand of the job-name and %j which will be the job ID assigned by SLURM)
+
+mkdir /tmp/$USER
+apptainer build /tmp/$USER/hyak-container.sif hyak-container.def
+cp /tmp/$USER/hyak-container.sif .

@@ -184,13 +184,25 @@ class EnvParams:
         MAKE_IRON_SWORD = 21
     """
     # achievement_weights = jnp.ones(len(Achievement))
-    achievement_weights = jnp.array([
-        10, 0, 0, 0, 0,
-        0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0,
-        0, 0,
-    ], dtype=jnp.float32)
+
+    # Nessecary in order to change the achievment weights 
+    # which is mutable
+
+    """
+    index 0: COLLECT_WOOD
+    index 2: EAT_COW
+    index 4: COLLECT_DRINK
+    """
+
+    achievement_weights: jnp.ndarray = struct.field(
+        default_factory=lambda: jnp.array([
+            10, 0, 0, 0, 0,
+            0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0,
+            0, 0,
+        ], dtype=jnp.float32)
+    )
 
     """If reward shaping is needed, adjust weights for different achievements"""
 
@@ -198,7 +210,7 @@ class EnvParams:
 @struct.dataclass
 class StaticEnvParams:
     num_players: int = 1
-    map_size: Tuple[int, int] = (16, 16)
+    map_size: Tuple[int, int] = (8, 8)
 
     """
     Modify the following so that there are
@@ -213,7 +225,7 @@ class StaticEnvParams:
 
     # Mobs
     max_zombies: int = 0
-    max_cows: int = 15
+    max_cows: int = 100
     max_growing_plants: int = 0
     max_skeletons: int = 0
     max_arrows: int = 0

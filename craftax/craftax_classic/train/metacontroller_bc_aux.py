@@ -20,11 +20,56 @@ from craftax.craftax_classic.train.logger import TrainLogger
 from craftax.craftax_classic.train.nets import LSTM, ZNet
 
 
+# NOOP, UP, RIGHT, DOWN, LEFT, DO
+ALLOWED_ACTIONS = jnp.array(
+    [
+        Action.NOOP.value,
+        Action.UP.value,
+        Action.RIGHT.value,
+        Action.DOWN.value,
+        Action.LEFT.value,
+        Action.DO.value,
+    ],
+    dtype=jnp.int32,
+)
+
+# Total number of actions in the environment
+NUM_ACTIONS = len(Action)
+
+# Map from global action id -> index inside ALLOWED_ACTIONS
+# Disallowed actions get index -1 (we will never use them).
+ACTION_TO_ALLOWED_INDEX = jnp.full((NUM_ACTIONS,), -1, dtype=jnp.int32)
+ACTION_TO_ALLOWED_INDEX = ACTION_TO_ALLOWED_INDEX.at[ALLOWED_ACTIONS].set(
+    jnp.arange(ALLOWED_ACTIONS.shape[0], dtype=jnp.int32)
+)
+
+
+def project_logits_to_allowed(logits: jnp.ndarray) -> jnp.ndarray:
+    """
+    Take logits over all actions (..., num_actions) and return logits
+    restricted to ALLOWED_ACTIONS: shape (..., num_allowed_actions).
+    """
+    return logits[..., ALLOWED_ACTIONS]
+
+
+def mask_logits_to_allowed_actions(logits: jnp.ndarray) -> jnp.ndarray:
+    num_actions = logits.shape[-1]
+
+    # Less extreme is fine; -1e4 is plenty to nearly zero the probability.
+    minus_inf = -1e4  
+    base_mask = jnp.full((num_actions,), minus_inf, dtype=logits.dtype)
+    base_mask = base_mask.at[ALLOWED_ACTIONS].set(0.0)
+
+    return logits + base_mask
+
+
 class AuxLossNet(nn.Module):
     output_size: int
 
     @nn.compact
     def __call__(self, x):
+        # jax.debug.print("aux __call__ x.shape = {shape}", shape=x.shape)
+        # jax.debug.print("aux __call__ output_size = {out}", out=self.output_size)
         x = nn.Dense(256)(x)
         x = nn.relu(x)
         x = nn.Dense(256)(x)
@@ -109,12 +154,28 @@ class ClassicMetaController:
         clip_coef: float = 0.2,
         norm_adv: bool = True,
         clip_vloss: bool = True,
-        ent_coef: float = 0.01,
+        # Set this to increase the amount of stocasticity
+        # Set to a value between 0.01 and 0.2
+        # 0.2 is too stochastic, 0.01 is not enough exploration 
+        ent_coef: float = 0.02,
         vf_coef: float = 0.5,
         aux_coef: float = 0.1,
         max_grad_norm: float = 0.5,
+        wandb_project: str = ""
         # target_kl: float | None = None,
     ):
+        """
+        Entropy coefficients:
+        - ent_coef: this is the coefficient for the policies entropy
+                    in other words the amount of exploration
+        - learning rate: the amount that it will learn
+        - anneal_lr: turn this on for the learning rate
+        - clip_coef, uoppdate_epochs, num_minibatches: how aggresively
+                     PPO updates the policy 
+        - 
+
+        """
+
         """
         Params:
         - env_params: non-static parameters
@@ -208,6 +269,8 @@ class ClassicMetaController:
             round(self.num_iterations * 0.8),
         )
 
+        self.wandb_project = "wandb_project"
+
     @partial(jax.jit, static_argnums=(0,))
     def train_some_episodes(
         self, rng, tick, model_params, opt_states, next_lstm_states, next_obs, env_state
@@ -240,26 +303,33 @@ class ClassicMetaController:
 
             def eval_agent(rng, agent_idx, agent_param, next_lstm_state):
                 rng, _rng = jax.random.split(rng)
-                logits, value, _, next_lstm_state = self.agent.apply(  # pyright: ignore
+                logits_full, value, _, next_lstm_state = self.agent.apply(  # pyright: ignore
                     agent_param,
                     self._idx(next_obs)[agent_idx],
                     next_lstm_state,
                     next_done[agent_idx],
                 )
-                # sets the action to NOOP if player is dead or sleeping
-                # I think this does more harm than good
-                # action = jax.lax.select(
-                #     ~agents_alive[agent_idx] | env_state.is_sleeping[:, agent_idx],
-                #     jnp.full(self.num_envs, Action.NOOP.value),
-                #     jax.random.categorical(_rng, logits),
-                # )
-                action = jax.random.categorical(_rng, logits)
+
+                # Restrict policy to ALLOWED_ACTIONS
+                logits_allowed = project_logits_to_allowed(logits_full)
+                logprobs_allowed = jax.nn.log_softmax(logits_allowed)
+
+                # Sample index within allowed actions
+                action_idx = jax.random.categorical(_rng, logits_allowed)
+
+                # Map back to global action id
+                action = ALLOWED_ACTIONS[action_idx]
+
+                # Log-prob under the restricted policy
+                logprob = logprobs_allowed[jnp.arange(self.num_envs), action_idx]
+
                 return (
                     value.flatten(),  # pyright: ignore
                     action,
-                    jax.nn.log_softmax(logits)[jnp.arange(self.num_envs), action],
+                    logprob,
                     next_lstm_state,
                 )
+
 
             rng, _rng = jax.random.split(rng)
             value, action, logprob, next_lstm_states = jax.vmap(eval_agent)(
@@ -373,16 +443,34 @@ class ClassicMetaController:
             init_lstm_state,
         ):
             agent_params, aux_params = model_params
-            logits, newvalue, hidden, _ = self.agent.apply(  # pyright: ignore
+            
+
+            logits_full, newvalue, hidden, _ = self.agent.apply(
                 agent_params, mb_obs, init_lstm_state, mb_dones
             )
-            probs = jax.nn.softmax(logits)
-            newlogprobs = jnp.log(probs)
-            entropy = -jnp.sum(probs * newlogprobs, axis=-1)
-            # basically newlogprobs[action], where action tells us what to take in the last dimension
+
+            # Restrict to ALLOWED_ACTIONS
+            logits_allowed = project_logits_to_allowed(logits_full)
+            logprobs_allowed = jax.nn.log_softmax(logits_allowed)
+            probs_allowed = jnp.exp(logprobs_allowed)
+
+            # Entropy over the restricted policy
+            entropy = -jnp.sum(probs_allowed * logprobs_allowed, axis=-1)
+
+            # Map mb_actions (global ids) -> indices in ALLOWED_ACTIONS
+            allowed_idx = ACTION_TO_ALLOWED_INDEX[mb_actions.astype(jnp.int32)]
+
+            # Sanity guard: if something went wrong and an action is -1, clamp it
+            allowed_idx = jnp.clip(allowed_idx, 0, ALLOWED_ACTIONS.shape[0] - 1)
+
+            # Log-prob of the taken action under the current policy
             newlogprob = jnp.take_along_axis(
-                newlogprobs, jnp.expand_dims(mb_actions.astype(int), axis=-1), axis=-1
+                logprobs_allowed,
+                jnp.expand_dims(allowed_idx, axis=-1),
+                axis=-1,
             ).squeeze(-1)
+
+
             logratio = newlogprob - mb_logprobs
             ratio = jnp.exp(logratio)
 
@@ -700,7 +788,7 @@ class ClassicMetaController:
         opt_states = jax.vmap(self.optimizer.init)(model_params)
 
         # Logger
-        log = TrainLogger(self.config, self.env_params, self.static_params)
+        log = TrainLogger(self.config, self.env_params, self.static_params, wandb_project=self.wandb_project)
 
         # initialize environment
         rng, _rng = jax.random.split(rng)
@@ -712,7 +800,7 @@ class ClassicMetaController:
             jnp.zeros((self.static_params.num_players, self.num_envs, 256)),
         )
         for iteration in range(self.num_iterations):
-            print("Iteration", iteration)
+            print("Iteration: ", iteration)
             rng, _rng = jax.random.split(rng)
             (
                 model_params,
@@ -769,12 +857,19 @@ class ClassicMetaController:
             jnp.zeros((self.static_params.num_players, 1, 256)),
         )
 
+
         def eval_agent(model_param, next_lstm_state, next_obs, next_done, rng):
-            logits, _value, _hidden, next_lstm_state = self.agent.apply(  # pyright: ignore
+            logits_full, _value, _hidden, next_lstm_state = self.agent.apply(  # pyright: ignore
                 model_param, next_obs, next_lstm_state, next_done
             )
-            action = jax.random.categorical(rng, logits).squeeze()
-            return action, logits, next_lstm_state
+
+            logits_allowed = project_logits_to_allowed(logits_full)
+            action_idx = jax.random.categorical(rng, logits_allowed).squeeze()
+            action = ALLOWED_ACTIONS[action_idx]
+
+            # You can return logits_full or logits_allowed; here I’ll keep full for debugging
+            return action, logits_full, next_lstm_state
+
 
         eval_fn = jax.jit(jax.vmap(eval_agent))
         while not jnp.all(next_done):
@@ -807,6 +902,13 @@ class ClassicMetaController:
         Helpful utility to index object like a PyTree
         """
         return self._Indexer(obj)
+
+
+
+
+
+###################################################################################################
+
 
 
 if __name__ == "__main__":
