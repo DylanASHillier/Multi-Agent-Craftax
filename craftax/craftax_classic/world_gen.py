@@ -10,75 +10,58 @@ def generate_world(rng, params: EnvParams, static_params: StaticEnvParams):
     fractal_noise_angles = params.fractal_noise_angles
     rng, _rng = jax.random.split(rng, num=2)
 
+    # ----------------------------------------------------
+    # PLAYER SPAWNS: 2 agents
+    # ----------------------------------------------------
     player_position = jnp.array(
         [
-            [1, 0],  # Player 0
-            [7, 6],  # Player 1
+            [7, 3],  # Player 0
+            [1, 0],  # Player 1
         ],
         dtype=jnp.int32,
     )
 
-# ------------------------------------------------------------------
-    # FIXED 8x8 LAVA / GRASS / TREE MAP
-    # ------------------------------------------------------------------
-    # Optional: gate this with a flag in EnvParams, e.g. params.use_fixed_map
-    # and/or assert map_size is (8, 8).
-    #
-    # if getattr(params, "use_fixed_map", False) and tuple(static_params.map_size) == (8, 8):
-    #     use_fixed = True
-    # else:
-    #     use_fixed = False
-    #
-    # if use_fixed:
-    #     ... (use the fixed map below and skip noise-based worldgen)
-    # else:
-    #     ... (original code)
-    # ------------------------------------------------------------------
-
+    # ----------------------------------------------------
+    # FIXED 8x8 MAP
+    # ----------------------------------------------------
     fixed_chars = [
-        "TLWLGLWT",
-        "GTTLTGWT",
-        "LWTGTLGT",
-        "TGTWGLGT",
-        "TGTGTGTG",
-        "TTGLGTGT",
-        "WLTLTGLG",
-        "TTTTGTGT",
+        "LGGGGGLL",
+        "GGTWGGGL",
+        "LGLLLTGL",
+        "LGLLLWGL",
+        "TGWLLGGL",
+        "WGLLLGGL",
+        "LGGLLTGL",
+        "LLGPGGGL",
     ]
 
-
+    # Treat 'P' as grass so it's walkable
     char_to_block = {
         "G": BlockType.GRASS.value,
         "L": BlockType.LAVA.value,
         "T": BlockType.TREE.value,
         "W": BlockType.WATER.value,
+        "P": BlockType.GRASS.value,
     }
-
 
     fixed_map = jnp.array(
         [[char_to_block[c] for c in row] for row in fixed_chars],
         dtype=jnp.int32,
     )
 
-    # Make sure all players spawn is grass
+    # Ensure all player spawns are grass (in case they weren't)
     fixed_map = fixed_map.at[player_position[:, 0], player_position[:, 1]].set(
         BlockType.GRASS.value
     )
 
-
     map = fixed_map
 
-    
-    # Zombies
-
+    # ----------------------------------------------------
+    # ZOMBIES
+    # ----------------------------------------------------
     z_pos = jnp.zeros((static_params.max_zombies, 2), dtype=jnp.int32)
     z_health = jnp.ones(static_params.max_zombies, dtype=jnp.int32)
     z_mask = jnp.zeros(static_params.max_zombies, dtype=bool)
-
-    # z_pos = z_pos.at[0].set(player_position + jnp.array([1, 0]))
-    # z_mask = z_mask.at[0].set(True)
-    # z_pos = z_pos.at[1].set(player_position + jnp.array([2, 0]))
-    # z_mask = z_mask.at[1].set(True)
 
     zombies = Mobs(
         position=z_pos,
@@ -87,7 +70,9 @@ def generate_world(rng, params: EnvParams, static_params: StaticEnvParams):
         attack_cooldown=jnp.zeros(static_params.max_zombies, dtype=jnp.int32),
     )
 
-    # Skeletons
+    # ----------------------------------------------------
+    # SKELETONS
+    # ----------------------------------------------------
     sk_positions = jnp.zeros((static_params.max_skeletons, 2), dtype=jnp.int32)
     sk_healths = jnp.zeros(static_params.max_skeletons, dtype=jnp.int32)
     sk_mask = jnp.zeros(static_params.max_skeletons, dtype=bool)
@@ -99,7 +84,9 @@ def generate_world(rng, params: EnvParams, static_params: StaticEnvParams):
         attack_cooldown=jnp.zeros(static_params.max_skeletons, dtype=jnp.int32),
     )
 
-    # Arrows
+    # ----------------------------------------------------
+    # ARROWS
+    # ----------------------------------------------------
     arrow_positions = jnp.zeros((static_params.max_arrows, 2), dtype=jnp.int32)
     arrow_healths = jnp.zeros(static_params.max_arrows, dtype=jnp.int32)
     arrow_masks = jnp.zeros(static_params.max_arrows, dtype=bool)
@@ -113,57 +100,27 @@ def generate_world(rng, params: EnvParams, static_params: StaticEnvParams):
 
     arrow_directions = jnp.ones((static_params.max_arrows, 2), dtype=jnp.int32)
 
-    # # Cows
-    # cows = Mobs(
-    #     position=jnp.zeros((static_params.max_cows, 2), dtype=jnp.int32),
-    #     health=jnp.ones(static_params.max_cows, dtype=jnp.int32) * params.cow_health,
-    #     mask=jnp.zeros(static_params.max_cows, dtype=bool),
-    #     attack_cooldown=jnp.zeros(static_params.max_cows, dtype=jnp.int32),
-    # )
-
-    # Can you set the mask for the cows (position, mask)
-        # --------------------
-    # COWS – 7 hard-placed on grass tiles of fixed_chars
-    # --------------------
-    # Valid 'G' tiles in the new fixed_chars:
-    # (row, col): (0,4), (1,0), (1,5), (2,3), (2,6), (3,1), (3,4),
-    #             (3,6), (4,1), (4,3), (4,5), (4,7), (5,2), (5,4),
-    #             (5,6), (6,5), (6,7), (7,4), (7,6)
-    #
-    # We'll pick 7 of these that are safely away from the spawn.
-
-        # --------------------
-    # COWS – 12 hard-placed on grass tiles of fixed_chars
-    # --------------------
-    # We choose 12 grass positions, avoiding player spawns (1,0) and (7,6).
+    # ----------------------------------------------------
+    # COWS – 4 hard-placed on grass tiles
+    # Positions: (0,1), (6,1), (1,6), (6,6)
+    # ----------------------------------------------------
     cow_positions_init = jnp.array(
         [
-            [0, 4],  # G
-            [1, 5],  # G
-            [2, 3],  # G
-            [2, 6],  # G
-            [3, 1],  # G
-            [3, 4],  # G
-            [3, 6],  # G
-            [4, 1],  # G
-            [4, 3],  # G
-            [4, 5],  # G
-            [4, 7],  # G
-            [5, 2],  # G
+            [0, 1],
+            [6, 1],
+            [1, 6],
+            [6, 6],
         ],
         dtype=jnp.int32,
     )
 
-    # Make sure we don't exceed capacity of the environment
     num_init_cows = min(static_params.max_cows, cow_positions_init.shape[0])
 
-    # Full position array (max_cows slots), first num_init_cows filled
     cow_positions = jnp.zeros((static_params.max_cows, 2), dtype=jnp.int32)
     cow_positions = cow_positions.at[:num_init_cows].set(
         cow_positions_init[:num_init_cows]
     )
 
-    # Mask: first num_init_cows are alive / active
     cow_mask = jnp.zeros(static_params.max_cows, dtype=bool)
     cow_mask = cow_mask.at[:num_init_cows].set(True)
 
@@ -174,7 +131,9 @@ def generate_world(rng, params: EnvParams, static_params: StaticEnvParams):
         attack_cooldown=jnp.zeros(static_params.max_cows, dtype=jnp.int32),
     )
 
-    # Plants
+    # ----------------------------------------------------
+    # PLANTS
+    # ----------------------------------------------------
     growing_plants_positions = jnp.zeros(
         (static_params.max_growing_plants, 2), dtype=jnp.int32
     )
@@ -183,11 +142,16 @@ def generate_world(rng, params: EnvParams, static_params: StaticEnvParams):
 
     rng, _rng = jax.random.split(rng)
 
+    # ----------------------------------------------------
+    # BUILD FINAL STATE
+    # ----------------------------------------------------
     state = EnvState(
         map=map,
         mob_map=jnp.zeros(static_params.map_size, dtype=bool),
         player_position=player_position,
-        player_direction=jnp.full(static_params.num_players, Action.UP.value, dtype=jnp.int32),
+        player_direction=jnp.full(
+            static_params.num_players, Action.UP.value, dtype=jnp.int32
+        ),
         player_health=jnp.full(static_params.num_players, 9, dtype=jnp.int32),
         player_food=jnp.full(static_params.num_players, 9, dtype=jnp.int32),
         player_drink=jnp.full(static_params.num_players, 9, dtype=jnp.int32),
@@ -206,13 +170,16 @@ def generate_world(rng, params: EnvParams, static_params: StaticEnvParams):
         growing_plants_positions=growing_plants_positions,
         growing_plants_age=growing_plants_age,
         growing_plants_mask=growing_plants_mask,
-        achievements=jnp.zeros((static_params.num_players, len(Achievement)), dtype=int),
+        achievements=jnp.zeros(
+            (static_params.num_players, len(Achievement)), dtype=int
+        ),
         light_level=calculate_light_level(0, params),
         state_rng=_rng,
         timestep=0,
     )
 
     return state
+
 
 
 ###########################################################################################################################################################

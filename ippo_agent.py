@@ -187,7 +187,7 @@ def combine_task_pickles_to_flat(
 
 if __name__ == "__main__":
     # How many demo episodes per specialist to generate
-    NUM_EPISODES_PER_AGENT = 1000
+    NUM_EPISODES_PER_AGENT = 100
 
     # 1) Train specialists
     wood_mc, wood_params   = train_specialist("collect_wood",  WOOD_WEIGHTS)

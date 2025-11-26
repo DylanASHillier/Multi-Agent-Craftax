@@ -1827,73 +1827,76 @@ def spawn_mobs(state, rng, params, static_params):
     )
     player_distance_map = get_distance_map(eval_positions, static_params)
 
-    # Cows
-    can_spawn_cow = state.cows.mask.sum() < static_params.max_cows
+    """
+    Do this so that it only spawns the cows that are initially provided
+    """
+    # # Cows
+    # can_spawn_cow = state.cows.mask.sum() < static_params.max_cows
 
-    rng, _rng = jax.random.split(rng)
-    can_spawn_cow = jnp.logical_and(
-        can_spawn_cow, jax.random.uniform(_rng) < params.spawn_cow_chance
-    )
+    # rng, _rng = jax.random.split(rng)
+    # can_spawn_cow = jnp.logical_and(
+    #     can_spawn_cow, jax.random.uniform(_rng) < params.spawn_cow_chance
+    # )
 
-    cows_can_spawn_map = state.map == BlockType.GRASS.value
-    cows_can_spawn_map = jnp.logical_and(cows_can_spawn_map, player_distance_map > 3)
-    cows_can_spawn_map = jnp.logical_and(
-        cows_can_spawn_map, player_distance_map < params.mob_despawn_distance
-    )
-    cows_can_spawn_map = jnp.logical_and(
-        cows_can_spawn_map, jnp.logical_not(state.mob_map)
-    )
-    can_spawn_cow = jnp.logical_and(can_spawn_cow, cows_can_spawn_map.sum() > 0)
+    # cows_can_spawn_map = state.map == BlockType.GRASS.value
+    # cows_can_spawn_map = jnp.logical_and(cows_can_spawn_map, player_distance_map > 3)
+    # cows_can_spawn_map = jnp.logical_and(
+    #     cows_can_spawn_map, player_distance_map < params.mob_despawn_distance
+    # )
+    # cows_can_spawn_map = jnp.logical_and(
+    #     cows_can_spawn_map, jnp.logical_not(state.mob_map)
+    # )
+    # can_spawn_cow = jnp.logical_and(can_spawn_cow, cows_can_spawn_map.sum() > 0)
 
-    rng, _rng = jax.random.split(rng)
-    cow_position = jax.random.choice(
-        _rng,
-        jnp.arange(static_params.map_size[0] * static_params.map_size[1]),
-        shape=(1,),
-        p=jnp.reshape(cows_can_spawn_map, -1) / jnp.sum(cows_can_spawn_map),
-    )
-    cow_position = jnp.array(
-        [
-            cow_position // static_params.map_size[0],
-            cow_position % static_params.map_size[1],
-        ]
-    ).T.astype(jnp.int32)[0]
+    # rng, _rng = jax.random.split(rng)
+    # cow_position = jax.random.choice(
+    #     _rng,
+    #     jnp.arange(static_params.map_size[0] * static_params.map_size[1]),
+    #     shape=(1,),
+    #     p=jnp.reshape(cows_can_spawn_map, -1) / jnp.sum(cows_can_spawn_map),
+    # )
+    # cow_position = jnp.array(
+    #     [
+    #         cow_position // static_params.map_size[0],
+    #         cow_position % static_params.map_size[1],
+    #     ]
+    # ).T.astype(jnp.int32)[0]
 
-    new_cow_index = jnp.argmax(jnp.logical_not(state.cows.mask))
+    # new_cow_index = jnp.argmax(jnp.logical_not(state.cows.mask))
 
-    new_cow_position = jax.lax.select(
-        can_spawn_cow,
-        cow_position,
-        state.cows.position[new_cow_index],
-    )
+    # new_cow_position = jax.lax.select(
+    #     can_spawn_cow,
+    #     cow_position,
+    #     state.cows.position[new_cow_index],
+    # )
 
-    new_cow_health = jax.lax.select(
-        can_spawn_cow,
-        params.cow_health,
-        state.cows.health[new_cow_index],
-    )
+    # new_cow_health = jax.lax.select(
+    #     can_spawn_cow,
+    #     params.cow_health,
+    #     state.cows.health[new_cow_index],
+    # )
 
-    new_cow_mask = jax.lax.select(
-        can_spawn_cow,
-        True,
-        state.cows.mask[new_cow_index],
-    )
+    # new_cow_mask = jax.lax.select(
+    #     can_spawn_cow,
+    #     True,
+    #     state.cows.mask[new_cow_index],
+    # )
 
-    cows = Mobs(
-        position=state.cows.position.at[new_cow_index].set(new_cow_position),
-        health=state.cows.health.at[new_cow_index].set(new_cow_health),
-        mask=state.cows.mask.at[new_cow_index].set(new_cow_mask),
-        attack_cooldown=state.cows.attack_cooldown,
-    )
+    # cows = Mobs(
+    #     position=state.cows.position.at[new_cow_index].set(new_cow_position),
+    #     health=state.cows.health.at[new_cow_index].set(new_cow_health),
+    #     mask=state.cows.mask.at[new_cow_index].set(new_cow_mask),
+    #     attack_cooldown=state.cows.attack_cooldown,
+    # )
 
-    state = state.replace(
-        cows=cows,
-        mob_map=state.mob_map.at[new_cow_position[0], new_cow_position[1]].set(
-            jnp.logical_or(
-                state.mob_map[new_cow_position[0], new_cow_position[1]], new_cow_mask
-            )
-        ),
-    )
+    # state = state.replace(
+    #     cows=cows,
+    #     mob_map=state.mob_map.at[new_cow_position[0], new_cow_position[1]].set(
+    #         jnp.logical_or(
+    #             state.mob_map[new_cow_position[0], new_cow_position[1]], new_cow_mask
+    #         )
+    #     ),
+    # )
 
     # # Zombies
     # can_spawn_zombie = state.zombies.mask.sum() < static_params.max_zombies
