@@ -50,8 +50,4 @@ class LSTM(nn.Module):
         final_state, (new_states, y_t) = model()(
             last_state, (reshaped_x, reshaped_terminations)
         )
-
-        if reshaped_x.shape[0] == 1:
-            y_t = jnp.squeeze(y_t, axis=0)
-
         return y_t, final_state
