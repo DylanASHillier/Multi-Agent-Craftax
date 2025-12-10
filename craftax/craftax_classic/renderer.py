@@ -871,13 +871,624 @@ def render_others_data(state, player=0):
     return jnp.concat([player_map_flattened, filtered_inventories_flattened, directions_one_hot], axis=1)
 
 
-# def render_pixels_empty(block_pixel_size):
-#     pixels = jnp.zeros(
-#         (
-#             OBS_DIM * block_pixel_size,
-#             (OBS_DIM + INVENTORY_OBS_HEIGHT) * block_pixel_size,
-#             3,
-#         ),
-#         dtype=jnp.float32,
-#     )
-#     return pixels
+def render_texture_with_alpha(local_position, textures, block_pixel_size, pixels, on_screen, texture_name):
+    texture = textures[texture_name] * on_screen
+
+    texture_with_background = 1 - textures[f"{texture_name}_alpha"] * on_screen
+
+    texture_with_background = (
+        texture_with_background
+        * jax.lax.dynamic_slice(
+            pixels,
+            (
+                local_position[0] * block_pixel_size,
+                local_position[1] * block_pixel_size,
+                0,
+            ),
+            (block_pixel_size, block_pixel_size, 3),
+        )
+    )
+
+    texture_with_background = (
+        texture_with_background + texture * textures[f"{texture_name}_alpha"]
+    )
+
+    pixels = jax.lax.dynamic_update_slice(
+        pixels,
+        texture_with_background,
+        (
+            local_position[0] * block_pixel_size,
+            local_position[1] * block_pixel_size,
+            0,
+        ),
+    )
+
+    return pixels, None
+
+def mob_index_to_texture_name(mob_index: int) -> str:
+    if mob_index == 0:
+        return "zombie_texture"
+    elif mob_index == 1:
+        return "cow_texture"
+    elif mob_index == 2:
+        return "skeleton_texture"
+    else:
+        return "arrow_texture"
+    
+
+def render_from_symbolic(
+    symbolic_obs, block_pixel_size, others_obs, num_players, player=0
+):
+    """
+    Renders pixels from symbolic observation for given player
+    does not reuse other rendering functions since symbolic_obs does not contain all state info
+    """
+    # Split symbolic observation
+    map_size = OBS_DIM[0] * OBS_DIM[1] * (len(BlockType) + 4)
+    inventory_size = 12
+    intrinsics_size = 4
+    direction_size = 4
+    symbolic_map = symbolic_obs[:map_size].reshape(
+        (OBS_DIM[0], OBS_DIM[1], len(BlockType) + 4)
+    )
+    inventory = symbolic_obs[
+        map_size : map_size + inventory_size
+    ] * 10.0
+    intrinsics = symbolic_obs[
+        map_size + inventory_size : map_size + inventory_size + intrinsics_size
+    ] * 10.0
+    direction = symbolic_obs[
+        map_size + inventory_size + intrinsics_size : map_size + inventory_size + intrinsics_size
+        + direction_size
+    ]
+    aux = symbolic_obs[
+        map_size + inventory_size + intrinsics_size + direction_size :
+    ]
+    light_level = aux[0]
+    is_sleeping = aux[1]
+    is_alive = aux[2]
+    # Render map
+    textures = TEXTURES[block_pixel_size]
+    pixel_map = jnp.zeros(
+        (OBS_DIM[0] * block_pixel_size, OBS_DIM[1] * block_pixel_size, 3),
+        dtype=jnp.float32,
+    )
+    # textures = TEXTURES[block_pixel_size]
+    map_indices = jnp.argmax(symbolic_map[:, :, : len(BlockType)], axis=-1)
+    map_pixels_indexes = jnp.repeat(
+        jnp.repeat(map_indices, repeats=block_pixel_size, axis=0),
+        repeats=block_pixel_size,
+        axis=1,
+    )
+    map_pixels_indexes = jnp.expand_dims(map_pixels_indexes, axis=-1)
+    map_pixels_indexes = jnp.repeat(map_pixels_indexes, repeats=3, axis=2)
+    def _add_block_type_to_pixels(pixels, block_index):
+        return (
+            pixels
+            + textures["full_map_block_textures"][block_index]
+            * (map_pixels_indexes == block_index),
+            None,
+        )
+    pixel_map, _ = jax.lax.scan(
+        _add_block_type_to_pixels, pixel_map, jnp.arange(len(BlockType))
+    )
+    # Render objects (mobs)
+    # symbolic_map has shape (H, W, C). The last 4 channels are mobs.
+    # 0: Zombie, 1: Cow, 2: Skeleton, 3: Arrow
+    mob_map = symbolic_map[:, :, len(BlockType):]
+    
+    def _render_mob_type(pixels, mob_idx):
+        # mob_idx is 0, 1, 2, 3
+        mob_presence = mob_map[:, :, mob_idx] > 0.5
+        # Stack textures
+        mob_textures = jnp.stack([
+            textures["zombie_texture"],
+            textures["cow_texture"],
+            textures["skeleton_texture"],
+            textures["arrow_texture"]
+        ])
+        
+        mob_textures_alpha = jnp.stack([
+            textures["zombie_texture_alpha"],
+            textures["cow_texture_alpha"],
+            textures["skeleton_texture_alpha"],
+            textures["arrow_texture_alpha"]
+        ])
+        
+        texture = mob_textures[mob_idx]
+        texture_alpha = mob_textures_alpha[mob_idx]
+        
+        # Repeat mob_presence to match pixel size
+        mask = jnp.repeat(jnp.repeat(mob_presence, block_pixel_size, axis=0), block_pixel_size, axis=1)
+        mask = mask[:, :, None] # (H*B, W*B, 1)
+        
+        def _render_at_pos(pixels, pos):
+            x, y = pos
+            is_present = mob_presence[x, y]
+            
+            current_texture = texture * is_present
+            current_alpha = texture_alpha * is_present
+            
+            background = jax.lax.dynamic_slice(
+                pixels,
+                (x * block_pixel_size, y * block_pixel_size, 0),
+                (block_pixel_size, block_pixel_size, 3)
+            )
+            
+            blended = background * (1 - current_alpha) + current_texture * current_alpha
+            
+            pixels = jax.lax.dynamic_update_slice(
+                pixels,
+                blended,
+                (x * block_pixel_size, y * block_pixel_size, 0)
+            )
+            return pixels, None
+
+        # Create list of positions
+        positions = jnp.array([(x, y) for x in range(OBS_DIM[0]) for y in range(OBS_DIM[1])])
+        
+        pixels, _ = jax.lax.scan(_render_at_pos, pixels, positions)
+        
+        return pixels, None
+
+    pixel_map, _ = jax.lax.scan(_render_mob_type, pixel_map, jnp.arange(4))
+    
+    # Render other players
+    if num_players > 1:
+        others_obs = others_obs.reshape(num_players - 1, -1)
+        
+        def _render_other_player(pixels, i):
+            other_player_obs = others_obs[i]
+            
+            # Extract map to find position
+            map_size = OBS_DIM[0] * OBS_DIM[1]
+            map_flat = other_player_obs[:map_size]
+            is_visible = jnp.max(map_flat) > 0.5
+            pos_idx = jnp.argmax(map_flat)
+            x = pos_idx // OBS_DIM[1]
+            y = pos_idx % OBS_DIM[1]
+            local_position = jnp.array([x, y])
+            
+            direction_start = map_size + 17
+            direction_probs = other_player_obs[direction_start : direction_start + 4]
+            direction_idx = jnp.argmax(direction_probs)
+            
+            # Extract is_sleeping (last element of inventory)
+            # Inventory is 0-16. 16 is is_sleeping.
+            is_sleeping = other_player_obs[map_size + 16] > 0.5
+            
+            player_texture_index = jax.lax.select(
+                is_sleeping, jnp.array(4, dtype=jnp.int32), direction_idx.astype(jnp.int32)
+            )
+            
+            # Render
+            on_screen = is_visible
+            
+            player_texture = (
+                textures["full_map_player_textures"][player_texture_index] * on_screen
+            )
+            
+            player_texture_with_background = (
+                1
+                - textures["full_map_player_textures_alpha"][player_texture_index]
+                * on_screen
+            )
+            
+            # Get background
+            background = jax.lax.dynamic_slice(
+                pixels,
+                (
+                    local_position[0] * block_pixel_size,
+                    local_position[1] * block_pixel_size,
+                    0,
+                ),
+                (block_pixel_size, block_pixel_size, 3),
+            )
+            
+            player_texture_with_background = (
+                player_texture_with_background * background
+            )
+            
+            player_texture_with_background = (
+                player_texture_with_background
+                + player_texture
+                * textures["full_map_player_textures_alpha"][player_texture_index]
+            )
+            
+            pixels = jax.lax.dynamic_update_slice(
+                pixels,
+                player_texture_with_background,
+                (
+                    local_position[0] * block_pixel_size,
+                    local_position[1] * block_pixel_size,
+                    0,
+                ),
+            )
+            
+            return pixels, None
+
+        pixel_map, _ = jax.lax.scan(
+            _render_other_player, pixel_map, jnp.arange(num_players - 1)
+        )
+
+    # Render player
+    local_position = jnp.array([OBS_DIM[0] // 2, OBS_DIM[1] // 2])
+    
+    direction_idx = jnp.argmax(direction)
+    player_texture_index = jax.lax.select(
+        is_sleeping > 0.5, 4, direction_idx
+    )
+    
+    on_screen = is_alive
+    
+    player_texture = (
+        textures["full_map_player_textures"][player_texture_index] * on_screen
+    )
+    
+    player_texture_with_background = (
+        1
+        - textures["full_map_player_textures_alpha"][player_texture_index]
+        * on_screen
+    )
+    
+    background = jax.lax.dynamic_slice(
+        pixel_map,
+        (
+            local_position[0] * block_pixel_size,
+            local_position[1] * block_pixel_size,
+            0,
+        ),
+        (block_pixel_size, block_pixel_size, 3),
+    )
+    
+    player_texture_with_background = (
+        player_texture_with_background * background
+    )
+    
+    player_texture_with_background = (
+        player_texture_with_background
+        + player_texture
+        * textures["full_map_player_textures_alpha"][player_texture_index]
+    )
+    
+    pixel_map = jax.lax.dynamic_update_slice(
+        pixel_map,
+        player_texture_with_background,
+        (
+            local_position[0] * block_pixel_size,
+            local_position[1] * block_pixel_size,
+            0,
+        ),
+    )
+
+    # Apply night
+    daylight = light_level
+    night_static_intensity = 2 * (0.5 - daylight)
+    night_static_intensity = jnp.maximum(night_static_intensity, 0.0)
+    night_with_static = (
+        jax.random.uniform(jax.random.PRNGKey(0), pixel_map.shape[:2]) * 95 + 32
+    )
+    night_static_mask = (
+        night_static_intensity * textures["night_noise_intensity_texture"]
+    )
+    night_with_static = (
+        1 - night_static_mask
+    ) * pixel_map + night_static_mask * night_with_static[:, :, None]
+
+    night_pixels = jax.lax.select(daylight < 0.5, night_with_static, pixel_map)
+
+    # Enhance
+    enhance_factor = 0.4
+    lum = (
+        0.299 * night_pixels[:, :, 0]
+        + 0.587 * night_pixels[:, :, 1]
+        + 0.114 * night_pixels[:, :, 2]
+    )
+    lum = jnp.expand_dims(lum, axis=-1).repeat(3, axis=-1)
+    night_pixels = night_pixels * enhance_factor + (1 - enhance_factor) * lum
+
+    # Tint
+    night_pixels = 0.5 * night_pixels + 0.5 * textures["night_texture"]
+
+    # Blend with map pixels
+    pixel_map = daylight * pixel_map + (1 - daylight) * night_pixels
+
+    # Apply sleep
+    sleep_pixels = (
+        0.299 * pixel_map[:, :, 0]
+        + 0.587 * pixel_map[:, :, 1]
+        + 0.114 * pixel_map[:, :, 2]
+    )
+    sleep_pixels = (0.5 * sleep_pixels)[:, :, None] + (0.5 * jnp.array([0, 0, 16]))[
+        None, None, :
+    ]
+    pixel_map = (1 - is_sleeping) * pixel_map + is_sleeping * sleep_pixels
+
+    # RENDER INVENTORY
+    inv_pixel_left_space = (block_pixel_size - int(0.8 * block_pixel_size)) // 2 - 1
+    inv_pixel_right_space = (
+        block_pixel_size - int(0.8 * block_pixel_size) - inv_pixel_left_space
+    )
+
+    number_size = int(block_pixel_size * 0.6)
+    number_offset = block_pixel_size - number_size
+
+    def _render_number(pixels, number, x, y):
+        # Use round to recover integer from float observation (e.g. 0.5 * 10 -> 5.0)
+        number = jnp.round(number).astype(jnp.int32)
+        number = jnp.maximum(number, 0)
+        
+        pixels = pixels.at[
+            y * block_pixel_size + number_offset - 1 : (y + 1) * block_pixel_size - 1,
+            x * block_pixel_size + number_offset - 1 : (x + 1) * block_pixel_size - 1,
+        ].mul(1 - textures["number_textures_alpha"][number])
+
+        pixels = pixels.at[
+            y * block_pixel_size + number_offset - 1 : (y + 1) * block_pixel_size - 1,
+            x * block_pixel_size + number_offset - 1 : (x + 1) * block_pixel_size - 1,
+        ].add(textures["number_textures"][number])
+
+        return pixels
+
+    def _render_inventory(inventory, intrinsics):
+        inv_pixels = jnp.zeros(
+            (INVENTORY_OBS_HEIGHT * block_pixel_size, OBS_DIM[1] * block_pixel_size, 3),
+            dtype=jnp.float32,
+        )
+        
+        # Render player stats
+        health_texture = jax.lax.select(
+            intrinsics[0] > 0,
+            textures["health_texture"],
+            textures["smaller_empty_texture"],
+        )
+        inv_pixels = inv_pixels.at[
+            inv_pixel_left_space : block_pixel_size - inv_pixel_right_space,
+            inv_pixel_left_space : block_pixel_size - inv_pixel_right_space,
+        ].set(health_texture)
+        inv_pixels = _render_number(inv_pixels, intrinsics[0], 0, 0)
+
+        hunger_texture = jax.lax.select(
+            intrinsics[1] > 0,
+            textures["hunger_texture"],
+            textures["smaller_empty_texture"],
+        )
+        inv_pixels = inv_pixels.at[
+            inv_pixel_left_space : block_pixel_size - inv_pixel_right_space,
+            block_pixel_size + inv_pixel_left_space : block_pixel_size * 2
+            - inv_pixel_right_space,
+        ].set(hunger_texture)
+        inv_pixels = _render_number(inv_pixels, intrinsics[1], 1, 0)
+
+        thirst_texture = jax.lax.select(
+            intrinsics[2] > 0,
+            textures["thirst_texture"],
+            textures["smaller_empty_texture"],
+        )
+        inv_pixels = inv_pixels.at[
+            inv_pixel_left_space : block_pixel_size - inv_pixel_right_space,
+            block_pixel_size * 2 + inv_pixel_left_space : block_pixel_size * 3
+            - inv_pixel_right_space,
+        ].set(thirst_texture)
+        inv_pixels = _render_number(inv_pixels, intrinsics[2], 2, 0)
+
+        energy_texture = jax.lax.select(
+            intrinsics[3] > 0,
+            textures["energy_texture"],
+            textures["smaller_empty_texture"],
+        )
+        inv_pixels = inv_pixels.at[
+            inv_pixel_left_space : block_pixel_size - inv_pixel_right_space,
+            block_pixel_size * 3 + inv_pixel_left_space : block_pixel_size * 4
+            - inv_pixel_right_space,
+        ].set(energy_texture)
+        inv_pixels = _render_number(inv_pixels, intrinsics[3], 3, 0)
+
+        # Render inventory
+
+        inv_wood_texture = jax.lax.select(
+            inventory[0] > 0,
+            textures["smaller_block_textures"][BlockType.WOOD.value],
+            textures["smaller_empty_texture"],
+        )
+        inv_pixels = inv_pixels.at[
+            inv_pixel_left_space : block_pixel_size - inv_pixel_right_space,
+            block_pixel_size * 5 + inv_pixel_left_space : block_pixel_size * 6
+            - inv_pixel_right_space,
+        ].set(inv_wood_texture)
+        inv_pixels = _render_number(inv_pixels, inventory[0], 5, 0)
+
+        inv_stone_texture = jax.lax.select(
+            inventory[1] > 0,
+            textures["smaller_block_textures"][BlockType.STONE.value],
+            textures["smaller_empty_texture"],
+        )
+        inv_pixels = inv_pixels.at[
+            inv_pixel_left_space : block_pixel_size - inv_pixel_right_space,
+            block_pixel_size * 6 + inv_pixel_left_space : block_pixel_size * 7
+            - inv_pixel_right_space,
+        ].set(inv_stone_texture)
+        inv_pixels = _render_number(inv_pixels, inventory[1], 6, 0)
+
+        inv_coal_texture = jax.lax.select(
+            inventory[2] > 0,
+            textures["smaller_block_textures"][BlockType.COAL.value],
+            textures["smaller_empty_texture"],
+        )
+        inv_pixels = inv_pixels.at[
+            inv_pixel_left_space : block_pixel_size - inv_pixel_right_space,
+            block_pixel_size * 7 + inv_pixel_left_space : block_pixel_size * 8
+            - inv_pixel_right_space,
+        ].set(inv_coal_texture)
+        inv_pixels = _render_number(inv_pixels, inventory[2], 7, 0)
+
+        inv_iron_texture = jax.lax.select(
+            inventory[3] > 0,
+            textures["smaller_block_textures"][BlockType.IRON.value],
+            textures["smaller_empty_texture"],
+        )
+        inv_pixels = inv_pixels.at[
+            inv_pixel_left_space : block_pixel_size - inv_pixel_right_space,
+            block_pixel_size * 8 + inv_pixel_left_space : block_pixel_size * 9
+            - inv_pixel_right_space,
+        ].set(inv_iron_texture)
+        inv_pixels = _render_number(inv_pixels, inventory[3], 8, 0)
+
+        inv_diamond_texture = jax.lax.select(
+            inventory[4] > 0,
+            textures["smaller_block_textures"][BlockType.DIAMOND.value],
+            textures["smaller_empty_texture"],
+        )
+        inv_pixels = inv_pixels.at[
+            block_pixel_size + inv_pixel_left_space : 2 * block_pixel_size
+            - inv_pixel_right_space,
+            inv_pixel_left_space : block_pixel_size - inv_pixel_right_space,
+        ].set(inv_diamond_texture)
+        inv_pixels = _render_number(inv_pixels, inventory[4], 0, 1)
+
+        inv_sapling_texture = jax.lax.select(
+            inventory[5] > 0,
+            textures["sapling_texture"],
+            textures["smaller_empty_texture"],
+        )
+        inv_pixels = inv_pixels.at[
+            inv_pixel_left_space : block_pixel_size - inv_pixel_right_space,
+            block_pixel_size * 4 + inv_pixel_left_space : block_pixel_size * 5
+            - inv_pixel_right_space,
+        ].set(inv_sapling_texture)
+        inv_pixels = _render_number(inv_pixels, inventory[5], 4, 0)
+
+        # Render tools
+        # Wooden pickaxe
+        wooden_pickaxe_maybe_texture = jax.lax.select(
+            inventory[6] > 0,
+            textures["wood_pickaxe_texture"],
+            textures["smaller_empty_texture"],
+        )
+        inv_pixels = inv_pixels.at[
+            block_pixel_size + inv_pixel_left_space : block_pixel_size * 2
+            - inv_pixel_right_space,
+            block_pixel_size + inv_pixel_left_space : block_pixel_size * 2
+            - inv_pixel_right_space,
+        ].set(wooden_pickaxe_maybe_texture)
+        inv_pixels = _render_number(inv_pixels, inventory[6], 1, 1)
+
+        # Stone pickaxe
+        stone_pickaxe_maybe_texture = jax.lax.select(
+            inventory[7] > 0,
+            textures["stone_pickaxe_texture"],
+            textures["smaller_empty_texture"],
+        )
+        inv_pixels = inv_pixels.at[
+            block_pixel_size + inv_pixel_left_space : block_pixel_size * 2
+            - inv_pixel_right_space,
+            block_pixel_size * 2 + inv_pixel_left_space : block_pixel_size * 3
+            - inv_pixel_right_space,
+        ].set(stone_pickaxe_maybe_texture)
+        inv_pixels = _render_number(inv_pixels, inventory[7], 2, 1)
+
+        # Iron pickaxe
+        iron_pickaxe_maybe_texture = jax.lax.select(
+            inventory[8] > 0,
+            textures["iron_pickaxe_texture"],
+            textures["smaller_empty_texture"],
+        )
+        inv_pixels = inv_pixels.at[
+            block_pixel_size + inv_pixel_left_space : block_pixel_size * 2
+            - inv_pixel_right_space,
+            block_pixel_size * 3 + inv_pixel_left_space : block_pixel_size * 4
+            - inv_pixel_right_space,
+        ].set(iron_pickaxe_maybe_texture)
+        inv_pixels = _render_number(inv_pixels, inventory[8], 3, 1)
+
+        # Wooden sword
+        wooden_sword_maybe_texture = jax.lax.select(
+            inventory[9] > 0,
+            textures["wood_sword_texture"],
+            textures["smaller_empty_texture"],
+        )
+        inv_pixels = inv_pixels.at[
+            block_pixel_size + inv_pixel_left_space : block_pixel_size * 2
+            - inv_pixel_right_space,
+            block_pixel_size * 4 + inv_pixel_left_space : block_pixel_size * 5
+            - inv_pixel_right_space,
+        ].set(wooden_sword_maybe_texture)
+        inv_pixels = _render_number(inv_pixels, inventory[9], 4, 1)
+
+        # Stone sword
+        stone_sword_maybe_texture = jax.lax.select(
+            inventory[10] > 0,
+            textures["stone_sword_texture"],
+            textures["smaller_empty_texture"],
+        )
+        inv_pixels = inv_pixels.at[
+            block_pixel_size + inv_pixel_left_space : block_pixel_size * 2
+            - inv_pixel_right_space,
+            block_pixel_size * 5 + inv_pixel_left_space : block_pixel_size * 6
+            - inv_pixel_right_space,
+        ].set(stone_sword_maybe_texture)
+        inv_pixels = _render_number(inv_pixels, inventory[10], 5, 1)
+
+        # Iron sword
+        iron_sword_maybe_texture = jax.lax.select(
+            inventory[11] > 0,
+            textures["iron_sword_texture"],
+            textures["smaller_empty_texture"],
+        )
+        inv_pixels = inv_pixels.at[
+            block_pixel_size + inv_pixel_left_space : block_pixel_size * 2
+            - inv_pixel_right_space,
+            block_pixel_size * 6 + inv_pixel_left_space : block_pixel_size * 7
+            - inv_pixel_right_space,
+        ].set(iron_sword_maybe_texture)
+        inv_pixels = _render_number(inv_pixels, inventory[11], 6, 1)
+        
+        return inv_pixels
+
+    # Render ego inventory
+    ego_inv_pixels = _render_inventory(inventory, intrinsics)
+    
+    # Combine map and ego inventory
+    pixels = jnp.concatenate([pixel_map, ego_inv_pixels], axis=0)
+    
+    # Render other players' inventories
+    if num_players > 1:
+        others_obs = others_obs.reshape(num_players - 1, -1)
+        
+        # Pre-allocate space for all other players' inventories
+        # Each inventory is INVENTORY_OBS_HEIGHT * block_pixel_size high
+        inv_height = INVENTORY_OBS_HEIGHT * block_pixel_size
+        total_others_height = (num_players - 1) * inv_height
+        
+        # Create a large canvas for all other inventories
+        others_inv_pixels = jnp.zeros(
+            (total_others_height, OBS_DIM[1] * block_pixel_size, 3),
+            dtype=jnp.float32
+        )
+        
+        def _render_other_inv(others_pixels, i):
+            other_player_obs = others_obs[i]
+            map_size = OBS_DIM[0] * OBS_DIM[1]
+            
+            inv_start = map_size
+            other_inventory = other_player_obs[inv_start : inv_start + 12] * 10.0
+            other_intrinsics = other_player_obs[inv_start + 12 : inv_start + 16] * 10.0
+            
+            other_inv_pixels = _render_inventory(other_inventory, other_intrinsics)
+            
+            # Update the slice corresponding to this player
+            others_pixels = jax.lax.dynamic_update_slice(
+                others_pixels,
+                other_inv_pixels,
+                (i * inv_height, 0, 0)
+            )
+            
+            return others_pixels, None
+
+        others_inv_pixels, _ = jax.lax.scan(
+            _render_other_inv, others_inv_pixels, jnp.arange(num_players - 1)
+        )
+        
+        pixels = jnp.concatenate([pixels, others_inv_pixels], axis=0)
+
+    return pixels
