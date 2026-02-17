@@ -138,7 +138,7 @@ def render_craftax_symbolic(state, player=0, observe_others=False):
 
     if observe_others:
         # return auxillary data as well if we want to observe others
-        return all_flattened, render_others_data(state)
+        return all_flattened, render_others_data(state, player)
 
     return all_flattened
 
