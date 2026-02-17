@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from typing import Tuple, Any
 
+import numpy as np
 import jax.random
 from flax import struct
 import jax.numpy as jnp
@@ -144,7 +145,7 @@ class EnvParams:
     god_mode: bool = False
     """Turn this on to not die lol"""
 
-    achievement_weights: jnp.ndarray = jnp.ones(len(Achievement))
+    achievement_weights: jnp.ndarray = struct.field(default_factory=lambda: jnp.ones(len(Achievement)))
     """If reward shaping is needed, adjust weights for different achievements"""
 
 
