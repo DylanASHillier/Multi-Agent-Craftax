@@ -248,7 +248,13 @@ def render_craftax_pixels(state, block_pixel_size, num_players, player=0):
         )
         return jax.lax.select(player_alive[i], map_pixels, old_map_pixels)
 
-    map_pixels = jax.lax.fori_loop(0, num_players, _render_player, map_pixels)
+    def _render_skip_player(i, map_pixels):
+        i = jnp.where(i<player, i, i+1)
+        return _render_player(i, map_pixels)
+
+    map_pixels = jax.lax.fori_loop(0, num_players-1, _render_skip_player, map_pixels)
+
+    # Render current player last
     map_pixels = _render_player(player, map_pixels)
 
     # Render mobs

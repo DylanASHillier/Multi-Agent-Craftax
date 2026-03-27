@@ -151,7 +151,7 @@ class EnvParams:
 
 @struct.dataclass
 class StaticEnvParams:
-    num_players: int = 1
+    num_players: int = 3
     map_size: Tuple[int, int] = (64, 64)
 
     # Mobs

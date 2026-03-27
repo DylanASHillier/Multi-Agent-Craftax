@@ -27,7 +27,7 @@ dependencies = [
     "argparse",
     "wandb",
     "orbax-checkpoint",
-    "pygame",
+    "pygame-ce",
     "gymnax",
     "chex",
     "matplotlib",
