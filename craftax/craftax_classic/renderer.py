@@ -138,7 +138,7 @@ def render_craftax_symbolic(state, player=0, observe_others=False):
 
     if observe_others:
         # return auxillary data as well if we want to observe others
-        return all_flattened, render_others_data(state)
+        return all_flattened, render_others_data(state, player)
 
     return all_flattened
 
@@ -248,7 +248,13 @@ def render_craftax_pixels(state, block_pixel_size, num_players, player=0):
         )
         return jax.lax.select(player_alive[i], map_pixels, old_map_pixels)
 
-    map_pixels = jax.lax.fori_loop(0, num_players, _render_player, map_pixels)
+    def _render_skip_player(i, map_pixels):
+        i = jnp.where(i<player, i, i+1)
+        return _render_player(i, map_pixels)
+
+    map_pixels = jax.lax.fori_loop(0, num_players-1, _render_skip_player, map_pixels)
+
+    # Render current player last
     map_pixels = _render_player(player, map_pixels)
 
     # Render mobs
@@ -819,6 +825,16 @@ def render_others_inventories(state):
     )
 
 
+def _delete_index(arr, player, axis=0):
+    """Traced-compatible replacement for jnp.delete(arr, player, axis=0).
+    Removes element at index `player` along the given axis, preserving order.
+    """
+    n = arr.shape[axis]
+    idx = jnp.arange(n - 1)
+    other_indices = jnp.where(idx >= player, idx + 1, idx)
+    return jnp.take(arr, other_indices, axis=axis)
+
+
 def render_others_data(state, player=0):
     """
     Renders other players in the perspective of player.
@@ -844,7 +860,7 @@ def render_others_data(state, player=0):
         local_position[:, 0],
         local_position[:, 1],
     ].set(show_player)
-    player_map = jnp.delete(player_map, player, axis=0)
+    player_map = _delete_index(player_map, player, axis=0)
     # reshape to (n_players-1, data)
     player_map_flattened = player_map.reshape(state.player_position.shape[0] - 1, -1)
 
@@ -854,14 +870,14 @@ def render_others_data(state, player=0):
         inventories,
         jnp.zeros_like(inventories),
     )
-    filtered_inventories = jnp.delete(filtered_inventories, player, axis=0)
+    filtered_inventories = _delete_index(filtered_inventories, player, axis=0)
     filtered_inventories_flattened = filtered_inventories.reshape(state.player_position.shape[0] - 1, -1)
 
-    directions = jnp.delete(state.player_direction, player)
+    directions = _delete_index(state.player_direction, player, axis=0)
     directions_one_hot = jax.nn.one_hot(directions, num_classes=4)
 
     # Set to all zeros if player isn't visible
-    show_player_others = jnp.delete(show_player, player)
+    show_player_others = _delete_index(show_player, player, axis=0)
     directions_one_hot = jnp.where(
         show_player_others[:, None],
         directions_one_hot,

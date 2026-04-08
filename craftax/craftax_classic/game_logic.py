@@ -487,7 +487,7 @@ def do_action(rng, state, action, static_params):
     # )
     # new_map = new_map.at[block_position[:, 0], block_position[:, 1]].set(new_plant)
     new_map, _ = jax.lax.scan(
-        _get_update_block(is_eating_plant, BlockType.RIPE_PLANT.value),
+        _get_update_block(is_eating_plant, BlockType.PLANT.value),
         new_map,
         jnp.arange(len(action)),
     )
@@ -511,7 +511,7 @@ def do_action(rng, state, action, static_params):
 
     # Update plant
     new_growing_plants_age = update_plants_with_eat(
-        state, block_position, static_params, action_block_in_bounds
+        state, block_position, static_params, is_eating_plant
     )
 
     # new_map = jax.lax.select(action_block_in_bounds, new_map, state.map)

@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from typing import Tuple, Any
 
+import numpy as np
 import jax.random
 from flax import struct
 import jax.numpy as jnp
@@ -150,7 +151,7 @@ class EnvParams:
 
 @struct.dataclass
 class StaticEnvParams:
-    num_players: int = 1
+    num_players: int = 3
     map_size: Tuple[int, int] = (64, 64)
 
     # Mobs
