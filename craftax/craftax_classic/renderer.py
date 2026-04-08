@@ -5,12 +5,13 @@ from craftax.craftax_classic.envs.craftax_state import Mobs
 from craftax.craftax_classic.game_logic import are_players_alive
 
 
-def render_craftax_symbolic(state, player=0, observe_others=False):
+def render_craftax_symbolic(state, player=0, observe_others=False, ego_position_override=None):
     """
     If observe_others is True, then the player_ids are rendered in the
     map and the current player's inventory and intrinsics are not rendered
     (they should be rendered with render_others_inventories)
     """
+    base_position = state.player_position[player] if ego_position_override is None else ego_position_override
     obs_dim_array = jnp.array([OBS_DIM[0], OBS_DIM[1]], dtype=jnp.int32)
 
     players_alive = are_players_alive(state)
@@ -22,7 +23,7 @@ def render_craftax_symbolic(state, player=0, observe_others=False):
         constant_values=BlockType.OUT_OF_BOUNDS.value,
     )
 
-    tl_corner = state.player_position[player] - obs_dim_array // 2 + MAX_OBS_DIM + 2
+    tl_corner = base_position - obs_dim_array // 2 + MAX_OBS_DIM + 2
 
     map_view = jax.lax.dynamic_slice(padded_grid, tl_corner, OBS_DIM)
     map_view_one_hot = jax.nn.one_hot(map_view, num_classes=len(BlockType))
@@ -39,7 +40,7 @@ def render_craftax_symbolic(state, player=0, observe_others=False):
 
         local_position = (
             mobs.position[mob_index]
-            - state.player_position[player]
+            - base_position
             + jnp.array([OBS_DIM[0], OBS_DIM[1]]) // 2
         )
         on_screen = jnp.logical_and(
@@ -144,7 +145,9 @@ def render_craftax_symbolic(state, player=0, observe_others=False):
 
 
 @partial(jax.jit, static_argnums=(1, 2))
-def render_craftax_pixels(state, block_pixel_size, num_players, player=0):
+def render_craftax_pixels(state, block_pixel_size, num_players, player=0, ego_position_override=None):
+
+    base_position = state.player_position[player] if ego_position_override is None else ego_position_override
     textures = TEXTURES[block_pixel_size]
     obs_dim_array = jnp.array([OBS_DIM[0], OBS_DIM[1]], dtype=jnp.int32)
 
@@ -156,7 +159,7 @@ def render_craftax_pixels(state, block_pixel_size, num_players, player=0):
         constant_values=BlockType.OUT_OF_BOUNDS.value,
     )
 
-    tl_corner = state.player_position[player] - obs_dim_array // 2 + MAX_OBS_DIM + 2
+    tl_corner = base_position - obs_dim_array // 2 + MAX_OBS_DIM + 2
 
     map_view = jax.lax.dynamic_slice(padded_grid, tl_corner, OBS_DIM)
 
@@ -196,7 +199,7 @@ def render_craftax_pixels(state, block_pixel_size, num_players, player=0):
         )
         local_position = (
             state.player_position[i]
-            - state.player_position[player]
+            - base_position
             + jnp.ones((2,), dtype=jnp.int32) * (obs_dim_array // 2)
         )
         on_screen = jnp.logical_and(
@@ -263,7 +266,7 @@ def render_craftax_pixels(state, block_pixel_size, num_players, player=0):
     def _add_zombie_to_pixels(pixels, zombie_index):
         local_position = (
             state.zombies.position[zombie_index]
-            - state.player_position[player]
+            - base_position
             + jnp.ones((2,), dtype=jnp.int32) * (obs_dim_array // 2)
         )
         on_screen = jnp.logical_and(
@@ -314,7 +317,7 @@ def render_craftax_pixels(state, block_pixel_size, num_players, player=0):
     def _add_cow_to_pixels(pixels, cow_index):
         local_position = (
             state.cows.position[cow_index]
-            - state.player_position[player]
+            - base_position
             + jnp.ones((2,), dtype=jnp.int32) * (obs_dim_array // 2)
         )
         on_screen = jnp.logical_and(
@@ -362,7 +365,7 @@ def render_craftax_pixels(state, block_pixel_size, num_players, player=0):
     def _add_skeleton_to_pixels(pixels, skeleton_index):
         local_position = (
             state.skeletons.position[skeleton_index]
-            - state.player_position[player]
+            - base_position
             + jnp.ones((2,), dtype=jnp.int32) * (obs_dim_array // 2)
         )
         on_screen = jnp.logical_and(
@@ -413,7 +416,7 @@ def render_craftax_pixels(state, block_pixel_size, num_players, player=0):
     def _add_arrow_to_pixels(pixels, arrow_index):
         local_position = (
             state.arrows.position[arrow_index]
-            - state.player_position[player]
+            - base_position
             + jnp.ones((2,), dtype=jnp.int32) * (obs_dim_array // 2)
         )
         on_screen = jnp.logical_and(
