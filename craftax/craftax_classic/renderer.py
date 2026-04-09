@@ -139,7 +139,7 @@ def render_craftax_symbolic(state, player=0, observe_others=False, ego_position_
 
     if observe_others:
         # return auxillary data as well if we want to observe others
-        return all_flattened, render_others_data(state, player)
+        return all_flattened, render_others_data(state, player, ego_position_override)
 
     return all_flattened
 
@@ -838,16 +838,18 @@ def _delete_index(arr, player, axis=0):
     return jnp.take(arr, other_indices, axis=axis)
 
 
-def render_others_data(state, player=0):
+def render_others_data(state, player=0, ego_position_override=None):
     """
     Renders other players in the perspective of player.
+    if ego-position-override is provided all agents are treated as "other agents"
     """
-    if state.player_position.shape[0] == 1:
+    if state.player_position.shape[0] == 1 and not ego_position_override:
         # only one player
         return jnp.zeros((0,))
+    base_position = state.player_position[player] if ego_position_override is None else ego_position_override
     local_position = (
         state.player_position
-        - state.player_position[player]
+        - base_position
         + jnp.array([OBS_DIM[0], OBS_DIM[1]]) // 2
     )
 
@@ -863,7 +865,7 @@ def render_others_data(state, player=0):
         local_position[:, 0],
         local_position[:, 1],
     ].set(show_player)
-    player_map = _delete_index(player_map, player, axis=0)
+    player_map = _delete_index(player_map, player, axis=0) if not ego_position_override else player_map
     # reshape to (n_players-1, data)
     player_map_flattened = player_map.reshape(state.player_position.shape[0] - 1, -1)
 
@@ -873,14 +875,14 @@ def render_others_data(state, player=0):
         inventories,
         jnp.zeros_like(inventories),
     )
-    filtered_inventories = _delete_index(filtered_inventories, player, axis=0)
+    filtered_inventories = _delete_index(filtered_inventories, player, axis=0) if not ego_position_override else filtered_inventories
     filtered_inventories_flattened = filtered_inventories.reshape(state.player_position.shape[0] - 1, -1)
 
-    directions = _delete_index(state.player_direction, player, axis=0)
+    directions = _delete_index(state.player_direction, player, axis=0) if not ego_position_override else state.player_direction
     directions_one_hot = jax.nn.one_hot(directions, num_classes=4)
 
     # Set to all zeros if player isn't visible
-    show_player_others = _delete_index(show_player, player, axis=0)
+    show_player_others = _delete_index(show_player, player, axis=0) if not ego_position_override else show_player
     directions_one_hot = jnp.where(
         show_player_others[:, None],
         directions_one_hot,
